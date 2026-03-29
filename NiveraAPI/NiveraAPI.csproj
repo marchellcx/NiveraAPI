@@ -1,0 +1,50 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net472</TargetFramework>
+        <Nullable>enable</Nullable>
+        <LangVersion>preview</LangVersion>
+        <AssemblyVersion>1.0.0.0</AssemblyVersion>
+        <FileVersion>1.0.0.0</FileVersion>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+        <Title>LabExtended</Title>
+        <Authors>marchellc</Authors>
+        <Description>A custom library used in projects by marchellcx</Description>
+        <Copyright>2026</Copyright>
+        <PackageProjectUrl>https://github.com/marchellc/NiveraAPI</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/marchellc/NiveraAPI</RepositoryUrl>
+        <PackageId>NiveraAPI</PackageId>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+      <DebugSymbols>true</DebugSymbols>
+      <DebugType>embedded</DebugType>
+      <DocumentationFile>bin\Release\NiveraAPI.xml</DocumentationFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="FastGenericNew" Version="3.3.1" />
+      <PackageReference Include="Lib.Harmony" Version="2.4.2" />
+      <PackageReference Include="MimeTypesMap" Version="1.0.9" />
+      <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Reference Include="System.Net">
+        <HintPath>C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Net.dll</HintPath>
+      </Reference>
+      <Reference Include="System.Net.Http">
+        <HintPath>C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.7.2\System.Net.Http.dll</HintPath>
+      </Reference>
+      <Reference Include="Telepathy">
+        <HintPath>..\..\Telepathy\Telepathy\bin\Release\net471\Telepathy.dll</HintPath>
+      </Reference>
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="TypeParsing\Parsers\" />
+    </ItemGroup>
+   
+</Project>
