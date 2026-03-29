@@ -11,12 +11,19 @@ public static class LibraryUpdate
     private static volatile Action? update;
 
     private static long lastUtc = 0;
+
+    private static long updateTicks = 0;
     private static float updateDelta = 0f;
     
     /// <summary>
     /// Gets the time elapsed since the last update, in seconds.
     /// </summary>
     public static float DeltaTime => updateDelta;
+    
+    /// <summary>
+    /// Gets the time elapsed since the last update, in ticks.
+    /// </summary>
+    public static long DeltaTicks => updateTicks;
 
     /// <summary>
     /// Registers an action to be invoked as part of a unified update operation.
@@ -81,6 +88,7 @@ public static class LibraryUpdate
             var delta = (curUtc - lastUtc) / TimeSpan.TicksPerMillisecond;
             
             updateDelta = delta / 1000f;
+            updateTicks = curUtc - lastUtc;
             
             lastUtc = curUtc;
         }

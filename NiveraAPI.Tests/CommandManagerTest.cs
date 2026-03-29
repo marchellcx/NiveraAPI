@@ -26,7 +26,7 @@ public static class CommandManagerTest
         
         var dict = ConsoleCommands.Manager.RegisterCommands(typeof(CommandManagerTest).Assembly);
         
-        Log.Info($"Done: &1{dict.Count}&r commands registered.");
+        Log.Info($"Done: &1{dict.Count}&r commands ({dict.Sum(kvp => kvp.Value.Overloads.Count)} overloads) registered.");
     }
 
     [Overload("hello", "Say hello to the world.")]
@@ -53,5 +53,11 @@ public static class CommandManagerTest
                     .Append(arguments[y])
                     .AppendLine();
         }));
+    }
+
+    [Overload("delta", "Prints the delta time.")]
+    private static void DeltaCommand(ref CommandContext<object> ctx)
+    {
+        ctx.SetOkText($"Delta: {LibraryUpdate.DeltaTime}s, {LibraryUpdate.DeltaTime / 1000f} ms, {LibraryUpdate.DeltaTicks} ticks");
     }
 }
