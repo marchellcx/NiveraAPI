@@ -9,9 +9,8 @@ using NiveraAPI.Logs;
 using NiveraAPI.Console;
 using NiveraAPI.Utilities;
 using NiveraAPI.Extensions;
+using NiveraAPI.IO.Network;
 using NiveraAPI.TokenParsing;
-
-using NiveraAPI.Networking.Telepathy;
 
 namespace NiveraAPI
 {
@@ -36,6 +35,7 @@ namespace NiveraAPI
         
         private static bool loaded = false;
         private static bool console = false;
+        private static bool check = false;
 
         /// <summary>
         /// Gets called when the application is about to exit.
@@ -49,8 +49,19 @@ namespace NiveraAPI
         {
             get
             {
-                if (!loaded)
-                    return console = GetConsoleWindow() != IntPtr.Zero;
+                if (!check)
+                {
+                    try
+                    {
+                        console = GetConsoleWindow() != IntPtr.Zero;
+                    }
+                    catch
+                    {
+                        console = HasArgument("console");
+                    }
+                    
+                    check = true;
+                }
 
                 return console;
             }
@@ -89,8 +100,6 @@ namespace NiveraAPI
             if (loaded)
                 throw new InvalidOperationException("Library already initialized");
             
-            console = GetConsoleWindow() != IntPtr.Zero;
-           
             ParseArguments();
             
             if (IsConsole)
@@ -112,9 +121,6 @@ namespace NiveraAPI
 
             if (IsConsole)
                 ConsoleCommands.Initialize();
-            
-            TelepathySettings.ReadSettings();
-            TelepathyLog.Initialize();
             
             loaded = true;
         }
@@ -259,6 +265,14 @@ namespace NiveraAPI
 
             if (HasArgument("commands.debug"))
                 cmdDebugToggle = true;
+            
+            if (HasArgument("netio_mtu", out value)
+                && int.TryParse(value, out var mtu))
+                NetSettings.MTU = mtu;
+            
+            if (HasArgument("netio_pingint", out value)
+                && int.TryParse(value, out var pingInterval))
+                NetSettings.PING_INT = pingInterval;
         }
     }
 }

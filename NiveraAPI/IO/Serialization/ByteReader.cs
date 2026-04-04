@@ -11,27 +11,52 @@ namespace NiveraAPI.IO.Serialization
     /// </summary>
     public class ByteReader : PoolResettable
     {
-        private ArraySegment<byte> buffer;
-
+        private volatile byte[] buffer;
+        
+        private volatile int count;
+        private volatile int offset;
+        private volatile int position;
+        
         /// <summary>
         /// Gets or sets the reader encoding.
         /// </summary>
         public UTF8Encoding Encoding { get; set; } = new(false, true);
 
         /// <summary>
+        /// Gets or sets the underlying byte buffer used for reading operations.
+        /// </summary>
+        public byte[] Buffer
+        {
+            get => buffer;
+            set => buffer = value;
+        }
+
+        /// <summary>
         /// Gets or sets the current count.
         /// </summary>
-        public int Count => buffer.Count;
+        public int Count
+        {
+            get => count;
+            set => count = value;
+        }
 
         /// <summary>
         /// Gets or sets the offset within the buffer.
         /// </summary>
-        public int Offset => buffer.Offset;
+        public int Offset
+        {
+            get => offset;
+            set => offset = value;
+        }
 
         /// <summary>
         /// Gets or sets the position of the reader.
         /// </summary>
-        public int Position { get; private set; } = 0;
+        public int Position
+        {
+            get => position;
+            set => position = value;
+        }
 
         /// <summary>
         /// Gets the remaining amount of bytes.
@@ -51,21 +76,21 @@ namespace NiveraAPI.IO.Serialization
         /// <summary>
         /// Gets the byte at the current position.
         /// </summary>
-        public byte Current => buffer.At(Position);
+        public byte Current => Buffer[Position + Offset];
 
         /// <summary>
         /// Reads a blittable type.
         /// </summary>
         /// <typeparam name="T">The type to read.</typeparam>
         /// <returns>The read value.</returns>
-        public unsafe T ReadBlittable<T>() where T : struct
+        public unsafe T ReadBlittable<T>() 
         {
             var size = sizeof(T);
             var result = default(T);
 
             ThrowIfEnd(size);
 
-            fixed (byte* ptr = &buffer.Array[Offset + Position])
+            fixed (byte* ptr = &Buffer[Offset + Position])
                 result = *(T*)ptr;
 
             Position += size;
@@ -235,7 +260,7 @@ namespace NiveraAPI.IO.Serialization
         public ArraySegment<byte> ReadSegment()
         {
             var length = ReadInt32();
-            var segment = buffer.ToSegment(Position, length);
+            var segment = Buffer.ToSegment(Position, length);
             
             Position += length;
             return segment;
@@ -399,12 +424,81 @@ namespace NiveraAPI.IO.Serialization
                 dict[ByteSerializer<TKey>.Deserialize(this)] = ByteSerializer<TValue>.Deserialize(this);
         }
 
+        // https://github.com/MirrorNetworking/Mirror/blob/93e37ab49256f063b14d295ce6c577e9b47b2b20/Assets/Mirror/Core/Tools/Compression.cs#L590
+        /// <summary>
+        /// Decompresses a 64-bit signed integer from the internal buffer.
+        /// </summary>
+        /// <returns>The decompressed 64-bit signed integer.</returns>
+        public long DecompressInt64()
+        {
+            ulong data = DecompressUInt64();
+            return ((long)(data >> 1)) ^ -((long)data & 1);
+        }
+        
+        // https://github.com/MirrorNetworking/Mirror/blob/93e37ab49256f063b14d295ce6c577e9b47b2b20/Assets/Mirror/Core/Tools/Compression.cs#L529
+        /// <summary>
+        /// Decompresses a 64-bit integer from a compact byte representation.
+        /// </summary>
+        /// <returns>The decompressed 64-bit integer.</returns>
+        /// <exception cref="IndexOutOfRangeException">
+        /// Thrown when the decompressed value cannot be determined due to an invalid byte sequence.
+        /// </exception>
+        public ulong DecompressUInt64()
+        {
+            byte a0 = ReadByte();
+
+            if (a0 < 241)
+                return a0;
+
+            byte a1 = ReadByte();
+            
+            if (a0 <= 248)
+                return 240 + ((a0 - (ulong)241) << 8) + a1;
+
+            byte a2 = ReadByte();
+            
+            if (a0 == 249)
+                return 2288 + ((ulong)a1 << 8) + a2;
+
+            byte a3 = ReadByte();
+            
+            if (a0 == 250)
+                return a1 + (((ulong)a2) << 8) + (((ulong)a3) << 16);
+
+            byte a4 = ReadByte();
+            
+            if (a0 == 251)
+                return a1 + (((ulong)a2) << 8) + (((ulong)a3) << 16) + (((ulong)a4) << 24);
+
+            byte a5 = ReadByte();
+            
+            if (a0 == 252)
+                return a1 + (((ulong)a2) << 8) + (((ulong)a3) << 16) + (((ulong)a4) << 24) + (((ulong)a5) << 32);
+
+            byte a6 = ReadByte();
+            
+            if (a0 == 253)
+                return a1 + (((ulong)a2) << 8) + (((ulong)a3) << 16) + (((ulong)a4) << 24) + (((ulong)a5) << 32) + (((ulong)a6) << 40);
+            
+            byte a7 = ReadByte();
+            
+            if (a0 == 254)
+                return a1 + (((ulong)a2) << 8) + (((ulong)a3) << 16) + (((ulong)a4) << 24) + (((ulong)a5) << 32) + (((ulong)a6) << 40) + (((ulong)a7) << 48);
+
+            byte a8 = ReadByte();
+            
+            if (a0 == 255)
+                return a1 + (((ulong)a2) << 8) + (((ulong)a3) << 16) + (((ulong)a4) << 24) + (((ulong)a5) << 32) + (((ulong)a6) << 40) + (((ulong)a7) << 48)  + (((ulong)a8) << 56);
+
+            throw new IndexOutOfRangeException($"DecompressUInt64 failure: {a0}");
+        }
+
         /// <summary>
         /// Clears the internal buffer and resets the position to its initial state.
         /// </summary>
         public void Clear()
         {
-            buffer = default;
+            Buffer = default;
             
             Position = 0;
         }
@@ -423,27 +517,32 @@ namespace NiveraAPI.IO.Serialization
         /// <param name="count">The total number of bytes to read.</param>
         public void Reset(byte[] buffer, int offset, int count)
         {
-            this.buffer = new(buffer, offset, count);
+            if (buffer == null)
+                throw new ArgumentNullException(nameof(buffer));
+            
+            Count = count;
+            Buffer = buffer;
+            Offset = offset;
             
             Position = 0;
         }
 
         /// <summary>
-        /// Resets the reader's position to the beginning of the current buffer.
+        /// Resets the reader's position to the beginning of the buffer.
         /// </summary>
+        /// <param name="buffer">The buffer to set.</param>
         public void Reset(ArraySegment<byte> buffer)
         {
             if (buffer.Array == null)
                 throw new ArgumentNullException(nameof(buffer));
 
-            if (buffer.Count < 1)
-                throw new ArgumentException("Buffer must be at least 1 byte long", nameof(buffer));
-            
-            this.buffer = buffer;
+            Count = buffer.Count;
+            Buffer = buffer.Array;
+            Offset = buffer.Offset;
 
             Position = 0;
         }
-        
+
         /// <summary>
         /// Places the object back into the pool for reuse by resetting its state and performing any necessary cleanup.
         /// This method must be implemented by derived classes to define specific reset behavior.
@@ -453,11 +552,7 @@ namespace NiveraAPI.IO.Serialization
         /// Implementations should ensure that the object is properly prepared for its next usage and does not retain any stale references or data.
         /// </remarks>
         public override void ReturnToPool()
-        {
-            buffer = default;
-
-            Position = 0;
-        }
+            => PoolBase<ByteReader>.Shared.Return(this);
 
         private void ThrowIfEnd(int requiredBytes)
         {

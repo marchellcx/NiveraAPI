@@ -141,11 +141,12 @@ public class ServiceCollection : IServiceCollection
             return false;
         
         service.Collection = this;
+        
+        OnServiceAdded(service);
+        
         service.Start();
         
         services.TryAdd(type, service);
-        
-        OnServiceAdded(service);
         return true;
     }
 
@@ -160,11 +161,10 @@ public class ServiceCollection : IServiceCollection
     {
         if (services.TryRemove(serviceType, out var service))
         {
-            OnServiceRemoved(service);
-            
             service.Stop();
             service.Collection = null!;
             
+            OnServiceRemoved(service);
             return true;
         }
         

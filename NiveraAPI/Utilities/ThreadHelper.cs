@@ -29,6 +29,23 @@ public static class ThreadHelper
             return Thread.CurrentThread == mainThread;
         }
     }
+
+    /// <summary>
+    /// Ensures that the current thread is the main thread.
+    /// Throws an exception if the operation is not executed on the main thread.
+    /// </summary>
+    /// <param name="msg">The message to include in the exception if the check fails.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown if the operation is not performed on the main thread or if the ThreadHelper has not been initialized.
+    /// </exception>
+    public static void EnsureMainThread(string msg = "")
+    {
+        if (mainThread == null)
+            throw new InvalidOperationException("ThreadHelper.Initialize() has not been called.");
+        
+        if (Thread.CurrentThread != mainThread)
+            throw new InvalidOperationException($"Operation must be performed on the main thread: {msg}");
+    }
     
     /// <summary>
     /// Queues a task continuation to run on the main thread.

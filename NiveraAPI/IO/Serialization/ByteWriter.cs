@@ -11,7 +11,8 @@ namespace NiveraAPI.IO.Serialization
     /// </summary>
     public class ByteWriter : PoolResettable
     {
-        private byte[] buffer = new byte[IOSettings.BYTE_WRITER_BUFFER_INIT_SIZE];
+        private volatile byte[] buffer = new byte[IOSettings.BYTE_WRITER_BUFFER_INIT_SIZE];
+        private volatile int position = 0;
 
         /// <summary>
         /// Gets or sets the UTF-8 encoding.
@@ -30,7 +31,11 @@ namespace NiveraAPI.IO.Serialization
         /// <summary>
         /// Gets or sets the position of the writer.
         /// </summary>
-        public int Position { get; private set; } = 0;
+        public int Position
+        {
+            get => position;
+            set => position = value;
+        }
 
         /// <summary>
         /// Writes the value of a blittable type.
@@ -405,6 +410,114 @@ namespace NiveraAPI.IO.Serialization
                 ByteSerializer<TKey>.Serialize(this, pair.Key);
                 ByteSerializer<TValue>.Serialize(this, pair.Value);
             }
+        }
+
+        // https://github.com/MirrorNetworking/Mirror/blob/93e37ab49256f063b14d295ce6c577e9b47b2b20/Assets/Mirror/Core/Tools/Compression.cs#L522
+        /// <summary>
+        /// Compresses a 64-bit signed integer using ZigZag encoding and writes the compressed value.
+        /// </summary>
+        /// <param name="i">The 64-bit signed integer to compress and write.</param>
+        public void CompressInt64(long i)
+        {
+            ulong zigzagged = (ulong)((i >> 63) ^ (i << 1));
+            
+            CompressUInt64(zigzagged);
+        }
+
+        // https://github.com/MirrorNetworking/Mirror/blob/93e37ab49256f063b14d295ce6c577e9b47b2b20/Assets/Mirror/Core/Tools/Compression.cs#L357
+        /// <summary>
+        /// Compresses a 64-bit unsigned integer into a compact binary format
+        /// and writes it to the underlying buffer.
+        /// </summary>
+        /// <param name="value">The 64-bit unsigned integer to compress and write.</param>
+        public void CompressUInt64(ulong value)
+        {
+            if (value <= 240)
+            {
+                byte a = (byte)value;
+
+                WriteByte(a);
+                return;
+            }
+
+            if (value <= 2287)
+            {
+                byte a = (byte)(((value - 240) >> 8) + 241);
+                byte b = (byte)((value - 240) & 0xFF);
+
+                WriteUInt16((ushort)(b << 8 | a));
+                return;
+            }
+
+            if (value <= 67823)
+            {
+                byte a = (byte)249;
+                byte b = (byte)((value - 2288) >> 8);
+                byte c = (byte)((value - 2288) & 0xFF);
+
+                WriteByte(a);
+                WriteUInt16((ushort)(c << 8 | b));
+
+                return;
+            }
+
+            if (value <= 16777215)
+            {
+                byte a = (byte)250;
+                uint b = (uint)(value << 8);
+
+                WriteUInt32(b | a);
+                return;
+            }
+
+            if (value <= 4294967295)
+            {
+                byte a = (byte)251;
+                uint b = (uint)value;
+
+                WriteByte(a);
+                WriteUInt32(b);
+
+                return;
+            }
+
+            if (value <= 1099511627775)
+            {
+                byte a = (byte)252;
+                byte b = (byte)(value & 0xFF);
+                uint c = (uint)(value >> 8);
+
+                WriteUInt16((ushort)(b << 8 | a));
+                WriteUInt32(c);
+
+                return;
+            }
+
+            if (value <= 281474976710655)
+            {
+                byte a = (byte)253;
+                byte b = (byte)(value & 0xFF);
+                byte c = (byte)((value >> 8) & 0xFF);
+                uint d = (uint)(value >> 16);
+
+                WriteByte(a);
+                WriteUInt16((ushort)(c << 8 | b));
+                WriteUInt32(d);
+
+                return;
+            }
+
+            if (value <= 72057594037927935)
+            {
+                byte a = 254;
+                ulong b = value << 8;
+                
+                WriteUInt64(b | a);
+                return;
+            }
+
+            WriteByte(255);
+            WriteUInt64(value);
         }
 
         /// <summary>

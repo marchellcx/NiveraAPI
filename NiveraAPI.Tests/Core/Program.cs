@@ -19,8 +19,8 @@ namespace NiveraAPI.Tests.Core
             { "cmd", CommandManagerTest.Start },
             { "storage", StorageTests.Start },
             
-            { "telepathy_client", TelepathyTests.Client },
-            { "telepathy_server", TelepathyTests.Server }
+            { "telepathy_client", NetTests.Client },
+            { "telepathy_server", NetTests.Server }
         });
         
         public static async Task Main()
