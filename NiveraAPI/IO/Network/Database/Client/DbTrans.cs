@@ -12,6 +12,16 @@ public class DbTrans : PoolResettable
     /// The ID of the transaction.
     /// </summary>
     public ushort Id { get; internal set; }
+    
+    /// <summary>
+    /// The UTC date at which the transaction was sent.
+    /// </summary>
+    public DateTime TimeSent { get; internal set; }
+    
+    /// <summary>
+    /// The UTC date at which the transaction response was received, if any.
+    /// </summary>
+    public DateTime? TimeReceived { get; internal set; }
 
     /// <summary>
     /// The client that started the transaction.
@@ -32,6 +42,11 @@ public class DbTrans : PoolResettable
     /// Whether the transaction is done and successful.
     /// </summary>
     public bool IsDoneAndOk => Result?.IsOk ?? false;
+
+    /// <summary>
+    /// Whether or not the transaction has timed out.
+    /// </summary>
+    public bool IsTimedOut => ResultType is DbResult.TimedOut;
     
     /// <summary>
     /// The data returned by the transaction.

@@ -1,4 +1,4 @@
-﻿using NiveraAPI.Utilities;
+﻿using NiveraAPI.Logs;
 
 namespace NiveraAPI;
 
@@ -8,6 +8,7 @@ namespace NiveraAPI;
 /// </summary>
 public static class LibraryUpdate
 {
+    private static readonly LogSink log = LogManager.GetSource("IO", "Update");
     private static volatile Action? update;
 
     private static long lastUtc = 0;
@@ -45,6 +46,8 @@ public static class LibraryUpdate
         var newUpdate = Delegate.Combine(update, target) as Action;
 
         Interlocked.CompareExchange(ref update, newUpdate, curUpdate);
+        
+        log.Debug("Register", $"Added handler: &1{target.Method}&r");
     }
 
     /// <summary>
@@ -71,32 +74,38 @@ public static class LibraryUpdate
             
             Interlocked.CompareExchange(ref update, null, curUpdate);
         }
+
+        log.Debug("Unregister", $"Removed handler: &1{target.Method}&r");
     }
 
     /// <summary>
     /// Invokes all registered actions as part of the unified update operation.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when this method is called on a thread other than the main thread.</exception>
+    /// <remarks>Make sure to invoke this method from the same thread you invoked <see cref="LibraryLoader.Initialize"/> from!</remarks>
     public static void Invoke()
     {
-        if (!ThreadHelper.IsMainThread)
-            throw new InvalidOperationException("This method must be called on the main thread.");
+        try
+        {
+            if (lastUtc != 0)
+            {
+                var curUtc = DateTime.UtcNow.Ticks;
+                var delta = (curUtc - lastUtc) / TimeSpan.TicksPerMillisecond;
 
-        if (lastUtc != 0)
-        {
-            var curUtc = DateTime.UtcNow.Ticks;
-            var delta = (curUtc - lastUtc) / TimeSpan.TicksPerMillisecond;
-            
-            updateDelta = delta / 1000f;
-            updateTicks = curUtc - lastUtc;
-            
-            lastUtc = curUtc;
+                updateDelta = delta / 1000f;
+                updateTicks = curUtc - lastUtc;
+
+                lastUtc = curUtc;
+            }
+            else
+            {
+                lastUtc = DateTime.UtcNow.Ticks;
+            }
+
+            update?.Invoke();
         }
-        else
+        catch (Exception ex)
         {
-            lastUtc = DateTime.UtcNow.Ticks;
+            log.Error("Invoke", ex);
         }
-        
-        update?.Invoke();
     }
 }

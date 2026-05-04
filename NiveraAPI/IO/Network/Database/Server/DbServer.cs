@@ -51,7 +51,7 @@ public class DbServer : Service
     /// True if the service can be added to the collection; otherwise, false.
     /// </returns>
     public override bool CanBeAdded(IServiceCollection collection)
-        => collection is NetServer;
+        => collection is NetServer or RestServer;
 
     /// <summary>
     /// Starts the service.
@@ -70,9 +70,9 @@ public class DbServer : Service
         File = new DbFile(Config.Directory);
         File.ReadAll();
 
-        if (Collection is NetServer server)
+        if (Collection is NetServer server || Collection.TryGetService(out server))
             server.ProvidedServices.Add(typeof(DbUser));
-        else if (Collection is RestServer restServer)
+        else if (Collection is RestServer restServer || Collection.TryGetService(out restServer))
             restServer.AddRoute(Route);
         else
             throw new Exception("Invalid service collection!");
@@ -85,9 +85,9 @@ public class DbServer : Service
     {
         base.Stop();
         
-        if (Collection is NetServer server)
+        if (Collection is NetServer server || Collection.TryGetService(out server))
             server.ProvidedServices.Remove(typeof(DbUser));
-        else if (Collection is RestServer restServer)
+        else if (Collection is RestServer restServer || Collection.TryGetService(out restServer))
             restServer.RemoveRoute(Route);
 
         Route = null!;

@@ -30,7 +30,6 @@ public class DbClient : NetService
     private ushort transId = 0;
     
     private DbConfig config;
-    
     private readonly List<DbTrans> transactions = new();
 
     /// <summary>
@@ -42,6 +41,11 @@ public class DbClient : NetService
     /// The permissions of the client.
     /// </summary>
     public DbPerms Permissions { get; private set; }
+
+    /// <summary>
+    /// Gets or sets the maximum duration of a transaction before being timed out.
+    /// </summary>
+    public TimeSpan TimeOut { get; set; } = TimeSpan.FromSeconds(2);
     
     /// <summary>
     /// The services required by this service.
@@ -521,6 +525,8 @@ public class DbClient : NetService
         
         var transaction = PoolBase<DbTrans>.Shared.Rent();
 
+        transaction.TimeSent = DateTime.UtcNow;
+
         transaction.Id = transId++;
         transaction.OnComplete = callback;
         
@@ -562,7 +568,24 @@ public class DbClient : NetService
         longestDiff = 0;
         shortestDiff = 0;      
         
-        transactions.ForEach(PoolBase<DbTrans>.Shared.Return);
+        transactions.ForEach(t =>
+        {
+            try
+            {
+                if (!t.IsDone)
+                {
+                    t.Result = new(null, DbResult.TimedOut, null);
+                    t.OnComplete?.Invoke(t);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Stop", ex);
+            }
+
+            PoolBase<DbTrans>.Shared.Return(t);
+        });
+        
         transactions.Clear();
         
         IsAuthenticated = false;
@@ -570,6 +593,58 @@ public class DbClient : NetService
         Permissions = DbPerms.None;
 
         config = null!;
+    }
+
+    /// <summary>
+    /// Updates the service with the provided time deltas for network and general update operations.
+    /// </summary>
+    /// <param name="netDelta">The elapsed time since the last network update, in seconds.</param>
+    /// <param name="updateDelta">The elapsed time since the last update, in seconds.</param>
+    public override void Update(float netDelta, float updateDelta)
+    {
+        base.Update(netDelta, updateDelta);
+
+        if (transactions.Count < 1)
+            return;
+        
+        var curUtc = DateTime.UtcNow;
+        var anyRemove = false;
+        
+        for (var x = 0; x < transactions.Count; x++)
+        {
+            var trans = transactions[x];
+
+            if (!trans.IsDone && (trans.TimeSent + TimeOut) >= curUtc)
+            {
+                try
+                {
+                    trans.Result = new(null, DbResult.TimedOut, null);
+                    trans.OnComplete?.Invoke(trans);
+                    
+                    Log.Warn($"Transaction &1{trans.Id}&r has timed out!");
+
+                    anyRemove = true;
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("Update", ex);
+                }
+            }
+        }
+
+        if (anyRemove)
+        {
+            transactions.RemoveAll(t =>
+            {
+                if (t.IsTimedOut)
+                {
+                    PoolBase<DbTrans>.Shared.Return(t);
+                    return true;
+                }
+
+                return false;
+            });
+        }
     }
 
     /// <summary>
@@ -628,6 +703,8 @@ public class DbClient : NetService
             Log.Error($"Received response for unknown transaction: &1{msg.Id}&r");
             return;
         }
+
+        transaction.TimeReceived = DateTime.UtcNow;
 
         var diff = TimeUtils.TicksDiffMilliseconds(msg.UtcProcessed, msg.UtcReceived);
         

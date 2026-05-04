@@ -48,5 +48,10 @@ public enum DbResult : byte
     /// <summary>
     /// Invalid arguments were provided.
     /// </summary>
-    InvalidArguments
+    InvalidArguments,
+    
+    /// <summary>
+    /// The transaction has timed out.
+    /// </summary>
+    TimedOut
 }

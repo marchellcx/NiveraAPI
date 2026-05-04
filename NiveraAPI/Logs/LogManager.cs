@@ -144,6 +144,8 @@ namespace NiveraAPI.Logs
             // if (DisabledLogs != null && (message.Level & DisabledLogs.Value) != 0)
             //    return;
 
+            FileLog.Write(ref message);
+            
             if (!UseQueue)
             {
                 try

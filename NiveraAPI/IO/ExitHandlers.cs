@@ -26,14 +26,14 @@ public static class ExitHandlers
     
     internal static void Initialize()
     {
-        if (LibraryLoader.IsConsole && !LibraryLoader.HasArgument("exithandlers.console_cancel_key_event_disabled"))
+        if (LibraryLoader.IsConsole && !LibraryLoader.HasArgument("ExitHandlersDisableConsoleKey"))
         {
-            exitByKey = !LibraryLoader.HasArgument("console.cancel_key_disabled");
+            exitByKey = !LibraryLoader.HasArgument("PreventExitKeyQuit");
             
             System.Console.CancelKeyPress += OnCancelKeyPress;
         }
 
-        if (!LibraryLoader.HasArgument("exithandlers.process_exit_event_disabled"))
+        if (!LibraryLoader.HasArgument("ExitHandlersDisableProcessExit"))
         {
             var process = Process.GetCurrentProcess();
 

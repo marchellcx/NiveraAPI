@@ -1,6 +1,8 @@
 ﻿using System.Reflection;
+
 using NiveraAPI.Logs;
 using NiveraAPI.Pooling;
+using NiveraAPI.Utilities;
 
 namespace NiveraAPI.Extensions
 {
@@ -11,6 +13,82 @@ namespace NiveraAPI.Extensions
     public static class AssemblyExtensions
     {
         private static volatile LogSink log = LogManager.GetSource("EXT", "Assembly");
+
+        public static void InvokeOnLoad(this IEnumerable<IInvokeOnLoad> list)
+        {
+            if (list == null)
+                throw new ArgumentNullException(nameof(list));
+
+            foreach (var instance in list)
+            {
+                if (instance != null)
+                {
+                    try
+                    {
+                        if (!instance.IsLoaded)
+                        {
+                            instance.OnLoaded();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error("InvokeOnLoad", ex);
+                    }
+                }
+            }
+        }
+        
+        public static List<IInvokeOnLoad> GetInvokeOnLoad(this Assembly assembly)
+        {
+            if (assembly == null)
+                throw new ArgumentNullException(nameof(assembly));
+            
+            var list = new List<IInvokeOnLoad>();
+
+            try
+            {
+                foreach (var type in assembly.GetTypes())
+                {
+                    try
+                    {
+                        if (!typeof(IInvokeOnLoad).IsAssignableFrom(type)
+                            || type.IsInterface
+                            || type.IsAbstract)
+                            continue;
+
+                        var constructor = type.GetConstructor(Array.Empty<Type>());
+
+                        if (constructor == null)
+                        {
+                            log.Warn("GetInvokeOnLoad", $"Class inheriting from &1IInvokeOnLoad&r does not have an " +
+                                                        $"empty constructor: &3{type.FullName}&r");
+                            continue;
+                        }
+
+                        var instance = constructor.Invoke(null) as IInvokeOnLoad;
+
+                        if (instance is null)
+                        {
+                            log.Warn("GetInvokeOnLoad", $"Class inheriting from &1IInvokeOnLoad&r could not be instantiated: " +
+                                                        $"&3{type.FullName}&r");
+                            continue;
+                        }
+                        
+                        list.Add(instance);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error("GetInvokeOnLoad", ex);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error("GetInvokeOnLoad", ex);
+            }
+
+            return list;
+        }
         
         /// <summary>
         /// Invokes all static methods in the specified assembly that match the given predicate, passing the provided

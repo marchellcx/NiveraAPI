@@ -26,10 +26,18 @@ public static class ServiceExtensions
 
         if (services == null)
             return false;
-        
+
         if (services.GetService(typeof(TService)) is not TService castService)
+        {
+            if (services is TService parentService)
+            {
+                service = parentService;
+                return true;
+            }
+            
             return false;
-        
+        }
+
         service = castService;
         return true;
     }
@@ -53,8 +61,14 @@ public static class ServiceExtensions
         var service = services.GetService(typeof(TService));
 
         if (service is not TService castService)
-            throw new InvalidOperationException($"Service of type {typeof(TService)} not found in the service collection.");
-        
+        {
+            if (services is TService parentService)
+                return parentService;
+            
+            throw new InvalidOperationException(
+                $"Service of type {typeof(TService)} not found in the service collection.");
+        }
+
         return castService;
     }
 }

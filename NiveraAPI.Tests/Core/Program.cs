@@ -16,22 +16,25 @@ namespace NiveraAPI.Tests.Core
         /// </summary>
         public static readonly ReadOnlyDictionary<string, Action> Tests = new(new Dictionary<string, Action>()
         {
-            { "cmd", CommandManagerTest.Start },
-            { "storage", StorageTests.Start },
+            { "Commands", CommandManagerTest.Start },
+            { "Storage", StorageTests.Start },
             
-            { "telepathy_client", NetTests.Client },
-            { "telepathy_server", NetTests.Server }
+            { "NetClient", NetTests.Client },
+            { "NetServer", NetTests.Server }
         });
         
         public static async Task Main()
         {
             try
             {
+                LibraryLoader.HelpPage.AppendLine("--Test=String (specifies the test to start: Commands, Storage, NetClient, NetServer)");
+                LibraryLoader.HelpPage.AppendLine("--NetPort=X (specifies the network port to connect to / listen on)");
+                
                 LibraryLoader.Initialize();
                 
                 log.Info("Loading ..");
 
-                if (!LibraryLoader.HasArgument("test", out var test))
+                if (!LibraryLoader.HasArgument("Test", out var test))
                 {
                     log.Error("No test specified!");
                     return;

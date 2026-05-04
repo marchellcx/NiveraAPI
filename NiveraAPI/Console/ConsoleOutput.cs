@@ -11,15 +11,26 @@ public static class ConsoleOutput
     private static volatile bool windows = false;
 
     /// <summary>
+    /// The function used to print a message to the console.
+    /// </summary>
+    public static volatile Action<string, ConsoleColor> ConsoleWriteLine = (line, color) =>
+    {
+        System.Console.ForegroundColor = color;
+        System.Console.WriteLine($">>> {line}");
+        System.Console.ResetColor();
+    };
+
+    /// <summary>
     /// Writes a message to the console with the specified text color.
     /// </summary>
     /// <param name="message">The message to be written to the console.</param>
     /// <param name="color">The color in which the message should be displayed. Defaults to <see cref="ConsoleColor.White"/>.</param>
     public static void Write(string message, ConsoleColor color = ConsoleColor.White)
     {
-        System.Console.ForegroundColor = color;
-        System.Console.WriteLine($">>> {message}");
-        System.Console.ResetColor();
+        if (ConsoleWriteLine != null)
+        {
+            ConsoleWriteLine(message, color);
+        }
     }
     
     internal static void Initialize()

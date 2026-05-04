@@ -31,16 +31,56 @@ namespace NiveraAPI
     /// </exception>
     public static class LibraryLoader
     {
+        static LibraryLoader()
+        {
+            HelpPage = new();
+            HelpPage.Append($"== NiveraAPI Library Help ==\n" +
+                            $"= IO =\n" +
+                            $"--IOWriterBufferInitSize=X (specifies the initial size of the writer buffer, in bytes)\n" +
+                            $"--IOWriterBufferResizing=true/false (whether or not to allow resizing of the ByteWriter buffer)\n" +
+                            $"--IOWriterBufferMultiplier=X (specifies the multiplier used when resizing the internal buffer array)\n" +
+                            $"\n" +
+                            $"= LOG =\n" +
+                            $"--LogDisabledLevels=StringList (specifies a list of disabled log levels - defaults to Verbose and Debug)\n" +
+                            $"--LogDisabledSouces=StringList (specifies a list of disabled log sinks)\n" +
+                            $"-LogDisableTrueColor (whether or not to disable True Color text formatting)\n" +
+                            $"-LogUseUnityRichText (whether or not to use Unity Rich Text tags for log colors)\n" +
+                            $"-LogAllowDebug(whether or not to enable the Debug log level)\n" +
+                            $"-LogAllowVerbose(whether or not to enable the Verbose log level)\n" +
+                            $"-LogEnableAll (enables all log levels and log sinks)\n" +
+                            $"-LogUseQueue (whether or not to use a concurrent queue to hold log messages - console output overrides this option!)\n" +
+                            $"-FileLogDisabled (disables file logs)\n" +
+                            $"--FileLogDirectory (sets the directory at which file logs should be stored)\n" +
+                            $"\n" +
+                            $"= NETWORK =\n" +
+                            $"--NetworkMTU=X (sets the maximum transmission unit value)\n" +
+                            $"--NetworkPingInterval (sets the network ping interval, in milliseconds)\n" +
+                            $"\n" +
+                            $"= MISC =\n" +
+                            $"-ConsoleOverride (forces Console IO to enable despite being unable to detect console presence)\n" +
+                            $"-CommandsDebug (enables debug messages from the Command Manager API)\n" +
+                            $"-NoInvokeOnLoad (disables invocation of IInvokeOnLoad classes on startup)\n" +
+                            $"-PreventExitKeyQuit (prevents quitting the program by pressing the console cancel key)\n" +
+                            $"-ExitHandlersDisableConsoleKey (disables handling of process exit via the console cancel key)\n" +
+                            $"-ExitHandlersDisableProcessExit (disables handling of process exit via self process exit event)\n");
+        }
+
         internal static bool cmdDebugToggle;
         
         private static bool loaded = false;
-        private static bool console = false;
+        
         private static bool check = false;
+        private static bool console = false;
 
         /// <summary>
         /// Gets called when the application is about to exit.
         /// </summary>
         public static event Action? Exiting;
+
+        /// <summary>
+        /// The string builder used to print the help page.
+        /// </summary>
+        public static volatile StringBuilder HelpPage;
 
         /// <summary>
         /// Whether or not the application is running in a console window.
@@ -53,12 +93,22 @@ namespace NiveraAPI
                 {
                     try
                     {
-                        console = GetConsoleWindow() != IntPtr.Zero;
+                        if (Environment.OSVersion.Platform is PlatformID.Unix)
+                        {
+                            console = !System.Console.IsOutputRedirected;
+                        }
+                        else
+                        {
+                            console = GetConsoleWindow() != IntPtr.Zero;
+                        }
                     }
                     catch
                     {
-                        console = HasArgument("console");
+                        // ignored
                     }
+
+                    if (!console && HasArgument("ConsoleOverride"))
+                        console = true;
                     
                     check = true;
                 }
@@ -98,12 +148,22 @@ namespace NiveraAPI
         public static void Initialize()
         {
             if (loaded)
-                throw new InvalidOperationException("Library already initialized");
+                throw new InvalidOperationException("Library already initialized!");
             
             ParseArguments();
             
             if (IsConsole)
                 ConsoleOutput.Initialize();
+
+            if (HasArgument("help"))
+            {
+                ConsoleOutput.Write("Printing help page ..", ConsoleColor.DarkRed);
+                ConsoleOutput.Write(HelpPage.ToString(), ConsoleColor.Cyan);
+                
+                return;
+            }
+            
+            FileLog.Initialize();
             
             ProcessArguments();
             
@@ -111,16 +171,19 @@ namespace NiveraAPI
             
             ExitHandlers.Initialize();
             
+            ThreadHelper.Initialize();
+            ReflectionHelper.Initialize();
+
             ByteWriter.InitWriters();
             ByteReader.InitReaders();
             
-            ThreadHelper.Initialize();
-            ReflectionHelper.Initialize();
-            
             TokenParser.Initialize();
-
+            
             if (IsConsole)
                 ConsoleCommands.Initialize();
+            
+            if (!HasArgument("NoInvokeOnLoad"))
+                ReflectionHelper.Assemblies.ForEach(a => a.GetInvokeOnLoad().InvokeOnLoad());
             
             loaded = true;
         }
@@ -221,56 +284,56 @@ namespace NiveraAPI
         {
             LogManager.DisabledLogs = LogLevel.Debug | LogLevel.Verbose;
             
-            if (HasArgument("io.writer.buffer.size", out var value)
+            if (HasArgument("IOWriterBufferInitSize", out var value)
                 && int.TryParse(value, out var bufferSize))
                 IOSettings.BYTE_WRITER_BUFFER_INIT_SIZE = bufferSize;
             
-            if (HasArgument("io.writer.buffer.resizing", out value)
+            if (HasArgument("IOWriterBufferResizing", out value)
                 && bool.TryParse(value, out var resize))
                 IOSettings.BYTE_WRITER_BUFFER_RESIZING = resize;
             
-            if (HasArgument("io.writer.buffer.resize_mult", out value)
+            if (HasArgument("IOWriterBufferMultiplier", out value)
                 && int.TryParse(value, out var mult))
                 IOSettings.BYTE_WRITER_BUFFER_RESIZE_MULT = mult;
 
-            if (HasArgument("log.disabled_levels", out value)
+            if (HasArgument("LogDisabledLevels", out value)
                 && value.TrySplit(',', null, true, true, out var levels)
                 && levels.TryConvertStringArray<LogLevel>(Enum.TryParse, out var logLevels))
                 LogManager.DisabledLogs = logLevels.CombineFlags();
 
-            if (HasArgument("log.allow_debug"))
+            if (HasArgument("LogAllowDebug"))
                 LogManager.DisabledLogs = LogLevel.Debug;
 
-            if (HasArgument("log.allow_verbose"))
+            if (HasArgument("LogAllowVerbose"))
                 LogManager.DisabledLogs = null;
 
-            if (HasArgument("log.disable_true_color"))
+            if (HasArgument("LogDisableTrueColor"))
                 LogManager.TrueColor = false;
             
-            if (HasArgument("log.unity_rich_text"))
+            if (HasArgument("LogUseUnityRichText"))
                 LogManager.UnityColorTags = true;
             
-            if (HasArgument("log.disabled_sources", out value)
+            if (HasArgument("LogDisabledSources", out value)
                 && value.TrySplit(',', null, true, true, out var sources))
                 LogManager.DisabledSources.AddRange(sources);
 
-            if (HasArgument("log.enable_all"))
+            if (HasArgument("LogEnableAll"))
             {
                 LogManager.DisabledLogs = null;
                 LogManager.DisabledSources.Clear();
             }
             
-            if (HasArgument("log.use_queue"))
+            if (HasArgument("LogUseQueue"))
                 LogManager.UseQueue = true;
 
-            if (HasArgument("commands.debug"))
+            if (HasArgument("CommandsDebug"))
                 cmdDebugToggle = true;
             
-            if (HasArgument("netio_mtu", out value)
+            if (HasArgument("NetworkMTU", out value)
                 && int.TryParse(value, out var mtu))
                 NetSettings.MTU = mtu;
             
-            if (HasArgument("netio_pingint", out value)
+            if (HasArgument("NetworkPingInterval", out value)
                 && int.TryParse(value, out var pingInterval))
                 NetSettings.PING_INT = pingInterval;
         }

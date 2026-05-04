@@ -20,6 +20,8 @@ public enum NetHeader : byte
     /// </summary>
     Message,
     
+    // UNUSED
+    
     /// <summary>
     /// Connect packet.
     /// </summary>

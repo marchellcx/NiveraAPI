@@ -38,7 +38,7 @@ public static class ConsoleCommands
         
         LibraryUpdate.Register(UpdateCommands);
         
-        log.Info("Initialized console commands.");
+        log.Info("Initialize", "Initialized console commands.");
     }
 
     private static void WriteCallback(CommandContext<object> ctx)
@@ -86,7 +86,7 @@ public static class ConsoleCommands
             }
             catch (Exception ex)
             {
-                log.Error(ex);
+                log.Error("UpdateCommands", ex);
             }
         });
     }
@@ -110,8 +110,7 @@ public static class ConsoleCommands
             }
             catch (Exception ex)
             {
-                log.Error("Failed to read input:", ex);
-                continue;
+                log.Error("UpdateInput", $"Failed to read input:\n{ex}");
             }
         }
     }

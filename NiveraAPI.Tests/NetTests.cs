@@ -342,7 +342,7 @@ public static class NetTests
     {
         var port = 7777;
 
-        if (LibraryLoader.HasArgument("net_port", out var value) 
+        if (LibraryLoader.HasArgument("NetPort", out var value) 
             && int.TryParse(value, out var customPort))
             port = customPort;
         
@@ -390,7 +390,7 @@ public static class NetTests
         
         var port = 7777;
 
-        if (LibraryLoader.HasArgument("net_port", out var value) 
+        if (LibraryLoader.HasArgument("NetPort", out var value) 
             && int.TryParse(value, out var customPort))
             port = customPort;
         
