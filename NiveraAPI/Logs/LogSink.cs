@@ -19,12 +19,20 @@ namespace NiveraAPI.Logs
         /// <summary>
         /// Gets the name of the log source.
         /// </summary>
-        public string Name => name;
+        public string Name
+        {
+            get => name;
+            set => name = value;
+        }
 
         /// <summary>
         /// Gets the category of the log source.
         /// </summary>
-        public string Category => category;
+        public string Category
+        {
+            get => category;
+            set => category = value;
+        }
 
         /// <summary>
         /// Gets or sets the rate-limit for this sink.

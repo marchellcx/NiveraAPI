@@ -7,35 +7,67 @@ using NiveraAPI.Extensions;
 
 using NiveraAPI.IO.Serialization;
 
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+
 namespace NiveraAPI.IO
 {
     /// <summary>
     /// Utility methods related to file I/O operations.
     /// </summary>
-    public static class FileUtils
+    public static class FileHelper
     {
         private static LogSink log;
         
-        private static JsonSerializerSettings indentedSettings;
-        private static JsonSerializerSettings nonIndentedSettings;
+        /// <summary>
+        /// Settings for saving JSON files with indentation for readability.
+        /// </summary>
+        public static JsonSerializerSettings JsonIndentedSettings;
+        
+        /// <summary>
+        /// Settings for saving JSON files without indentation for compactness.
+        /// </summary>
+        public static JsonSerializerSettings JsonNonIndentedSettings;
 
-        static FileUtils()
+        /// <summary>
+        /// Serializer instance for handling YAML serialization operations.
+        /// </summary>
+        public static ISerializer YamlSerializer;
+
+        /// <summary>
+        /// Deserialization logic for YAML-formatted data.
+        /// </summary>
+        public static IDeserializer YamlDeserializer;
+
+        static FileHelper()
         {
             log = LogManager.GetSource("IO", "FileHelper");
             
-            indentedSettings = new() { Formatting = Formatting.Indented };
+            YamlSerializer = new SerializerBuilder()
+                .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                .DisableAliases()
+                .IgnoreFields()
+                .Build();
             
-            if (indentedSettings.Converters.TryGetFirst(x => x is StringEnumConverter, out var enumConverter))
-                indentedSettings.Converters.Remove(enumConverter);
+            YamlDeserializer = new DeserializerBuilder()
+                .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                .IgnoreUnmatchedProperties()
+                .IgnoreFields()
+                .Build();
+            
+            JsonIndentedSettings = new() { Formatting = Formatting.Indented };
+            
+            if (JsonIndentedSettings.Converters.TryGetFirst(x => x is StringEnumConverter, out var enumConverter))
+                JsonIndentedSettings.Converters.Remove(enumConverter);
 
-            indentedSettings.Converters.Add(new StringEnumConverter(new CamelCaseNamingStrategy(), true));
+            JsonIndentedSettings.Converters.Add(new StringEnumConverter(new CamelCaseNamingStrategy(), true));
 
-            nonIndentedSettings = new() { Formatting = Formatting.None };
+            JsonNonIndentedSettings = new() { Formatting = Formatting.None };
 
-            if (nonIndentedSettings.Converters.TryGetFirst(x => x is StringEnumConverter, out enumConverter))
-                nonIndentedSettings.Converters.Remove(enumConverter);
+            if (JsonNonIndentedSettings.Converters.TryGetFirst(x => x is StringEnumConverter, out enumConverter))
+                JsonNonIndentedSettings.Converters.Remove(enumConverter);
 
-            nonIndentedSettings.Converters.Add(new StringEnumConverter(new CamelCaseNamingStrategy(), true));
+            JsonNonIndentedSettings.Converters.Add(new StringEnumConverter(new CamelCaseNamingStrategy(), true));
         }
 
         /// <summary>
@@ -353,8 +385,8 @@ namespace NiveraAPI.IO
             try
             {
                 var serialized = JsonConvert.SerializeObject(data, indented 
-                                                                        ? indentedSettings
-                                                                        : nonIndentedSettings);
+                                                                        ? JsonIndentedSettings
+                                                                        : JsonNonIndentedSettings);
 
                 if (string.IsNullOrEmpty(serialized))
                     return false;
@@ -421,7 +453,7 @@ namespace NiveraAPI.IO
                 if (string.IsNullOrEmpty(content))
                     return false;
 
-                result = JsonConvert.DeserializeObject<T>(content, indentedSettings)!;
+                result = JsonConvert.DeserializeObject<T>(content, JsonIndentedSettings)!;
                 return result != null;
             }
             catch (Exception ex)

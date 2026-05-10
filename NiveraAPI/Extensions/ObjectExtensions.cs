@@ -26,10 +26,12 @@
         }
 
         /// <summary>
-        /// Whether or not an object is equal to another.
+        /// Determines whether the current object is equal to another object.
         /// </summary>
-        /// <remarks>Will always return false if one of these objects is null, <paramref name="countNull"/>
-        /// controls what to return if both objects are null.</remarks>
+        /// <param name="instance">The current object instance being compared.</param>
+        /// <param name="otherInstance">The object being compared to the current instance.</param>
+        /// <param name="countNull">Indicates whether to treat two null objects as equal.</param>
+        /// <returns>True if the objects are considered equal; otherwise, false.</returns>
         public static bool IsEqualTo(this object instance, object otherInstance, bool countNull = false)
         {
             if (instance is null && otherInstance is null)

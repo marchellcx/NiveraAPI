@@ -6,14 +6,14 @@
     public static class SegmentExtensions
     {
         /// <summary>
-        /// Gets a value at a specific index in an array segmnet.
+        /// Gets a value at a specific index in an array segment.
         /// </summary>
         /// <typeparam name="T">The type of the item.</typeparam>
         /// <param name="segment">The target array segment.</param>
         /// <param name="index">The target index.</param>
         /// <returns>The value at the specified index.</returns>
         public static T At<T>(this ArraySegment<T> segment, int index)
-            => segment.Array[segment.Offset + index];
+            => segment.Array![segment.Offset + index];
 
         /// <summary>
         /// Gets a new segment from an existing array.

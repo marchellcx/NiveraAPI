@@ -5,13 +5,24 @@ using NiveraAPI.Extensions;
 
 namespace NiveraAPI.Logs;
 
+/// <summary>
+/// Provides functionality for writing and managing log messages to a file.
+/// </summary>
 public static class FileLog
 {
     private static volatile bool running;
     
     private static volatile StreamWriter writer;
     private static volatile ConcurrentQueue<string> logs = new();
-    
+
+    /// <summary>
+    /// Writes a log message to the file log if logging is currently active.
+    /// </summary>
+    /// <param name="msg">The log message to be written. Must be passed by reference.</param>
+    /// <returns>
+    /// Returns <c>true</c> if the log message was successfully added to the log queue;
+    /// otherwise, <c>false</c> if logging is not active.
+    /// </returns>
     public static bool Write(ref LogMessage msg)
     {
         if (!running)

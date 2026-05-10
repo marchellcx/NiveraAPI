@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+
 using NiveraAPI.Pooling;
 
 namespace NiveraAPI.Extensions
@@ -13,11 +14,6 @@ namespace NiveraAPI.Extensions
         /// The character used to escape ANSI colors.
         /// </summary>
         public const char LogAnsiColorEscapeChar = (char)27;
-
-        /// <summary>
-        /// The UTF-8 encoding.
-        /// </summary>
-        public static UTF8Encoding Utf8 { get; } = new(false, true);
 
         /// <summary>
         /// Regex used to match new lines.
@@ -1048,7 +1044,6 @@ namespace NiveraAPI.Extensions
         /// appending a postfix string to the result.
         /// </summary>
         /// <param name="str">The original string from which the substring is extracted.</param>
-        /// <param name="index">The starting position of the substring within the original string.</param>
         /// <param name="length">The length of the substring to extract.</param>
         /// <param name="postfix">The string to be appended to the resulting substring. Defaults to " ...".</param>
         /// <returns>A new string that is a substring of the original string with the postfix appended.</returns>
@@ -1225,13 +1220,19 @@ namespace NiveraAPI.Extensions
         /// </summary>
         /// <param name="builder">The StringBuilder instance to process.</param>
         /// <exception cref="ArgumentNullException">Thrown when the provided StringBuilder instance is null.</exception>
-        public static void RemoveTrailingWhiteSpaces(this StringBuilder builder)
+        public static void RemoveTrailingWhiteSpaces(this StringBuilder builder, bool removeTrailingNewLines = false)
         {
             if (builder is null)
                 throw new ArgumentNullException(nameof(builder));
 
             while (builder.Length > 0 && char.IsWhiteSpace(builder[builder.Length - 1]))
                 builder.Remove(builder.Length - 1, 1);
+
+            if (removeTrailingNewLines)
+            {
+                while (builder.Length > 0 && builder[builder.Length - 1] == '\n')
+                    builder.Remove(builder.Length - 1, 1);
+            }
         }
     }
 }

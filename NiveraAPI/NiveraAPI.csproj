@@ -8,7 +8,7 @@
         <FileVersion>1.0.0.0</FileVersion>
         <ImplicitUsings>enable</ImplicitUsings>
         <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
-        <Title>LabExtended</Title>
+        <Title>NiveraAPI</Title>
         <Authors>marchellc</Authors>
         <Description>A custom library used in projects by marchellcx</Description>
         <Copyright>2026</Copyright>
@@ -26,10 +26,10 @@
 
     <ItemGroup>
       <PackageReference Include="FastGenericNew" Version="3.3.1" />
-      <PackageReference Include="Hocon.Configuration" Version="2.0.4" />
       <PackageReference Include="Lib.Harmony" Version="2.4.2" />
       <PackageReference Include="MimeTypesMap" Version="1.0.9" />
       <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+      <PackageReference Include="YamlDotNet" Version="17.1.0" />
     </ItemGroup>
 
     <ItemGroup>

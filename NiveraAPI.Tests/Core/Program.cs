@@ -20,14 +20,16 @@ namespace NiveraAPI.Tests.Core
             { "Storage", StorageTests.Start },
             
             { "NetClient", NetTests.Client },
-            { "NetServer", NetTests.Server }
+            { "NetServer", NetTests.Server },
+            
+            { "Config", ConfigTests.Start }
         });
         
         public static async Task Main()
         {
             try
             {
-                LibraryLoader.HelpPage.AppendLine("--Test=String (specifies the test to start: Commands, Storage, NetClient, NetServer)");
+                LibraryLoader.HelpPage.AppendLine("--Test=String (specifies the test to start: Commands, Storage, NetClient, NetServer, Config)");
                 LibraryLoader.HelpPage.AppendLine("--NetPort=X (specifies the network port to connect to / listen on)");
                 
                 LibraryLoader.Initialize();

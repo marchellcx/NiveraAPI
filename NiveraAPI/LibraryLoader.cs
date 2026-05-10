@@ -42,7 +42,7 @@ namespace NiveraAPI
                             $"\n" +
                             $"= LOG =\n" +
                             $"--LogDisabledLevels=StringList (specifies a list of disabled log levels - defaults to Verbose and Debug)\n" +
-                            $"--LogDisabledSouces=StringList (specifies a list of disabled log sinks)\n" +
+                            $"--LogDisabledSources=StringList (specifies a list of disabled log sinks)\n" +
                             $"-LogDisableTrueColor (whether or not to disable True Color text formatting)\n" +
                             $"-LogUseUnityRichText (whether or not to use Unity Rich Text tags for log colors)\n" +
                             $"-LogAllowDebug(whether or not to enable the Debug log level)\n" +
@@ -54,7 +54,7 @@ namespace NiveraAPI
                             $"\n" +
                             $"= NETWORK =\n" +
                             $"--NetworkMTU=X (sets the maximum transmission unit value)\n" +
-                            $"--NetworkPingInterval (sets the network ping interval, in milliseconds)\n" +
+                            $"--NetworkPingInterval=X (sets the network ping interval, in milliseconds)\n" +
                             $"\n" +
                             $"= MISC =\n" +
                             $"-ConsoleOverride (forces Console IO to enable despite being unable to detect console presence)\n" +
