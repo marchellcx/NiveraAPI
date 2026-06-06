@@ -22,7 +22,9 @@ namespace NiveraAPI.Tests.Core
             { "NetClient", NetTests.Client },
             { "NetServer", NetTests.Server },
             
-            { "Config", ConfigTests.Start }
+            { "Config", ConfigTests.Start },
+            
+            { "SteamAuth", SteamAuthTests.Start }
         });
         
         public static async Task Main()

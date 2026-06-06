@@ -463,33 +463,33 @@ namespace NiveraAPI.Rest.Server
 			while (IsListening)
 			{
 				HttpListenerContext? context = null;
-				
+
 				try
 				{
 					context = await listener.GetContextAsync();
-					
+
 					if (context == null)
 						continue;
 
 					log.Debug(
 						$"RECV_CTX: {context.Request.RemoteEndPoint} ({context.Request.HttpMethod}) -> {context.Request.RawUrl}");
-					
+
 					var rawUrl = context.Request.RawUrl;
 					var parameters = new ConcurrentDictionary<string, string>();
 					var num = rawUrl.IndexOf('?');
 					var text = rawUrl;
-					
+
 					if (num > -1)
 					{
 						text = "";
-						
+
 						for (var i = 0; i < rawUrl.Length && i != num; i++)
 							text += rawUrl[i];
 
 						var array = rawUrl.Split(new char[1] { '?' })
 							.Skip(1)
 							.ToArray();
-						
+
 						foreach (string text2 in array)
 						{
 							var parts = text2.Split('=').Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
@@ -506,51 +506,52 @@ namespace NiveraAPI.Rest.Server
 					}
 
 					RestRoute? httpRoute = null;
-					
+
 					var method = context.Request.HttpMethod;
-					
+
 					if (parameters.TryRemove("methodOverride", out var value))
 						method = value.ToUpper();
 
 					foreach (var route in Routes)
 					{
 						var methods = route.Value.Methods;
-						
-						if (methods != null 
-						    && methods.Length > 0 
-						    && route.Value.Methods.All(x => !string.Equals(x.Method, method, StringComparison.CurrentCultureIgnoreCase)))
+
+						if (methods != null
+						    && methods.Length > 0
+						    && route.Value.Methods.All(x =>
+							    !string.Equals(x.Method, method, StringComparison.CurrentCultureIgnoreCase)))
 							continue;
 
 						var text3 = text;
-						
+
 						if (route.Value.FixedUrl.Contains("/{") && route.Value.FixedUrl.Contains("}"))
 						{
 							route.Value.FixedUrl.TrySplit('/', null, true, true, out var splits2);
 							rawUrl.TrySplit('/', null, true, true, out string[] splits3);
-							
+
 							if (splits2 != null && splits3 != null)
 							{
 								if (splits3.Length != splits2.Length)
 									continue;
 
 								var flag = false;
-								
+
 								for (var num2 = 0; num2 < splits3.Length; num2++)
 								{
 									var text4 = splits2[num2];
 									var text5 = splits3[num2];
-									
+
 									if (text4.StartsWith("{") && text4.EndsWith("}"))
 									{
 										var text6 = text4.Replace("{", "").Replace("}", "");
 										var value3 = WebUtility.UrlDecode(text5);
-										
-										if (!string.IsNullOrWhiteSpace(value3) 
+
+										if (!string.IsNullOrWhiteSpace(value3)
 										    && !string.IsNullOrWhiteSpace(text6)
 										    && !parameters.ContainsKey(text6))
 										{
 											parameters.TryAdd(text6, value3);
-											
+
 											flag = true;
 										}
 									}
@@ -571,7 +572,7 @@ namespace NiveraAPI.Rest.Server
 						if (route.Value.FixedUrl == text3 || route.Value.IsMatch(rawUrl, text))
 						{
 							route.Value.ParseParameters(rawUrl, text3, parameters);
-							
+
 							httpRoute = route.Value;
 							break;
 						}
@@ -581,9 +582,9 @@ namespace NiveraAPI.Rest.Server
 					{
 						context.Response.StatusCode = 404;
 						context.Response.StatusDescription = "Not Found";
-						
+
 						context.Response.ContentType = "text/plain";
-						
+
 						using (var sw = new StreamWriter(context.Response.OutputStream))
 							await sw.WriteLineAsync("Could not find route " + context.Request.RawUrl);
 
@@ -592,14 +593,14 @@ namespace NiveraAPI.Rest.Server
 					}
 
 					var httpContext = await RestServerContext.GetAsync(context, this, httpRoute, parameters);
-					
+
 					if (httpContext == null)
 					{
 						context.Response.StatusCode = 500;
 						context.Response.StatusDescription = "Null Wrapper";
-						
+
 						context.Response.ContentType = "text/plain";
-						
+
 						using (var sw = new StreamWriter(context.Response.OutputStream))
 							await sw.WriteLineAsync("Failed to create a context wrapper");
 
@@ -609,6 +610,10 @@ namespace NiveraAPI.Rest.Server
 					{
 						queue.AddToQueue(() => OnContextReceived(httpContext));
 					}
+				}
+				catch (ObjectDisposedException)
+				{
+					// ignored
 				}
 				catch (Exception ex)
 				{

@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Concurrent;
+
 using NiveraAPI.Pooling;
 using NiveraAPI.Utilities;
 
@@ -787,6 +788,32 @@ namespace NiveraAPI.Extensions
 
             result = default!;
             return false;
+        }
+
+        /// <summary>
+        /// Searches for an element in the collection that matches the specified predicate
+        /// and returns the zero-based index of the first occurrence.
+        /// </summary>
+        /// <typeparam name="T">The type of elements in the collection.</typeparam>
+        /// <param name="objects">The collection to search. Cannot be null.</param>
+        /// <param name="predicate">The predicate to determine if the element matches. Cannot be null.</param>
+        /// <returns>The zero-based index of the first matching element in the collection, or -1 if no matching element is found.</returns>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown if <paramref name="objects"/> or <paramref name="predicate"/> is null.
+        /// </exception>
+        public static int FindIndex<T>(this IEnumerable<T> objects, Predicate<T> predicate)
+        {
+            var index = 0;
+
+            foreach (var obj in objects)
+            {
+                if (predicate(obj))
+                    return index;
+                
+                index++;
+            }
+            
+            return -1;
         }
         #endregion
 

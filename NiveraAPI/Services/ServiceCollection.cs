@@ -10,7 +10,7 @@ public class ServiceCollection : IServiceCollection
 {
     private volatile bool running;
     private volatile IServiceCollection? parent;
-    private volatile ConcurrentDictionary<Type, IService> services;
+    private volatile ConcurrentDictionary<Type, IService> services = new();
 
     /// <summary>
     /// Whether the service is running.
