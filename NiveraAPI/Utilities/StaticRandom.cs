@@ -5,7 +5,7 @@
     /// </summary>
     public static class StaticRandom
     {
-        private static volatile Random random = new();
+        private static volatile System.Random random = new();
 
         /// <summary>
         /// Gets a random Boolean value that is either true or false.

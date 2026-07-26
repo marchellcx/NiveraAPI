@@ -36,5 +36,36 @@ namespace NiveraAPI.Extensions
         /// </summary>
         public static bool HasAttribute<T>(this MemberInfo member, bool inherit, out T attribute) where T : Attribute
             => (attribute = member.GetCustomAttribute<T>(inherit)) != null;
+        
+        /// <summary>
+        /// Attempts to retrieve a custom attribute of a specified type from the provided member.
+        /// </summary>
+        /// <typeparam name="T">
+        /// The type of the custom attribute to be retrieved.
+        /// </typeparam>
+        /// <param name="member">
+        /// The member from which the attribute is to be retrieved (e.g., a class, method, or property).
+        /// </param>
+        /// <param name="attributeValue">
+        /// When this method returns, contains the retrieved attribute of type <typeparamref name="T"/> if found; otherwise, the default value for the type.
+        /// </param>
+        /// <returns>
+        /// True if the attribute of the specified type is found on the member; otherwise, false.
+        /// </returns>
+        public static bool TryGetAttribute<T>(this MemberInfo member, out T attributeValue)
+        {
+            var customAttributes = member.GetCustomAttributes();
+		
+            foreach (var item in customAttributes)
+            {
+                if (item.Is(out attributeValue))
+                {
+                    return true;
+                }
+            }
+
+            attributeValue = default!;
+            return false;
+        }
     }
 }

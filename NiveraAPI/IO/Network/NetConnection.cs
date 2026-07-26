@@ -19,6 +19,8 @@ namespace NiveraAPI.IO.Network;
 /// </summary>
 public class NetConnection : ServiceCollection
 {
+    internal volatile bool debugLogs;
+    
     private volatile int id;
 
     private volatile object msgLock = new();
@@ -69,6 +71,18 @@ public class NetConnection : ServiceCollection
     public NetTime Time => time;
 
     /// <summary>
+    /// Represents the client instance associated with the network connection.
+    /// Provides functionality for communication and managing client-specific behaviors.
+    /// </summary>
+    public NetClient? Client => client;
+
+    /// <summary>
+    /// Represents the associated server instance for the network connection, if the connection
+    /// is operating as a server. Returns null if the connection is operating as a client.
+    /// </summary>
+    public NetServer? Server => server;
+
+    /// <summary>
     /// The socket associated with the connection.
     /// </summary>
     /// <remarks>Will be <c>null</c> if the connection is a server connection.</remarks>
@@ -106,7 +120,8 @@ public class NetConnection : ServiceCollection
         
         var ip = (IPEndPoint)endPoint;
         var address = new IPAddress(ip.Address.GetAddressBytes());
-        
+
+        debugLogs = server.debugLogs;
         serverSendEndPoint = new IPEndPoint(address, ip.Port);
 
         ping = new();
@@ -130,6 +145,8 @@ public class NetConnection : ServiceCollection
         this.socket = socket ?? throw new ArgumentNullException(nameof(socket));
         this.clientEndPoint = endPoint ?? throw new ArgumentNullException(nameof(endPoint));
 
+        debugLogs = client.debugLogs;
+        
         ping = new();
         time = new(this);
         
@@ -144,7 +161,7 @@ public class NetConnection : ServiceCollection
         ping.Start();
         time.Start();
         
-        log.Info("Started!");
+        log.DebugIf("Started!", debugLogs);
     }
 
     /// <inheritdoc />
@@ -163,7 +180,7 @@ public class NetConnection : ServiceCollection
 
         msgWriter = null!;
         
-        log.Info("Stopped!");
+        log.DebugIf("Stopped!", debugLogs);
     }
 
     /// <inheritdoc />
@@ -174,7 +191,14 @@ public class NetConnection : ServiceCollection
         if (service is NetService netService)
         {
             netService.Connection = this;
+            
             netServices.Add(netService);
+            
+            log.DebugIf($"Added network service &3{service.GetType().Name}&r", debugLogs);
+        }
+        else
+        {
+            log.DebugIf($"Added service &3{service.GetType().Name}&r", debugLogs);
         }
     }
 
@@ -186,6 +210,7 @@ public class NetConnection : ServiceCollection
         if (service is NetService netService)
         {
             netService.Connection = null!;
+            
             netServices.Remove(netService);
         }
     }
@@ -202,6 +227,8 @@ public class NetConnection : ServiceCollection
             throw new ArgumentNullException(nameof(handler));
         
         messageHandlers[typeof(T)] = obj => handler((T)obj);
+        
+        log.DebugIf($"Registered handler for message &3{typeof(T).Name}&r", debugLogs);
     }
 
     /// <summary>
@@ -210,7 +237,10 @@ public class NetConnection : ServiceCollection
     /// <typeparam name="T">The type of the serializable object for which the handler should be removed.</typeparam>
     public void RemoveHandler<T>() where T : ISerializableObject
     {
-        messageHandlers.Remove(typeof(T));
+        if (messageHandlers.Remove(typeof(T)))
+            log.DebugIf($"Removed handler for message &3{typeof(T).Name}&r", debugLogs);
+        else
+            log.DebugIf($"No handler for message &3{typeof(T).Name}&r", debugLogs);
     }
 
     /// <summary>
@@ -220,17 +250,13 @@ public class NetConnection : ServiceCollection
     /// </summary>
     public void Disconnect()
     {
+        log.DebugIf("Disconnecting ...", debugLogs);
+        
         if (IsClient)
-        {
             client.Disconnect();
-            return;
-        }
 
         if (IsServer)
-        {
             server.Disconnect(this);
-            return;
-        }
     }
 
     /// <summary>
@@ -450,7 +476,7 @@ public class NetConnection : ServiceCollection
         var count = (int)reader.DecompressInt64();
         var position = reader.Position + count;
         
-        log.Debug($"Attempting to read messages (Count={count}; Position={position}; CurPosition={reader.Position}) ...");
+        log.DebugIf($"Attempting to read messages (Count={count}; Position={position}; CurPosition={reader.Position}) ...", debugLogs);
 
         while (reader.Position < position && reader.Remaining > 2)
         {

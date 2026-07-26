@@ -78,49 +78,38 @@ public static class ConfigWriter
             if (hasSection)
             {
                 builder.Append(kvp.Key);
-                builder.Append(" {");
+                builder.AppendLine(" {");
             }
 
             foreach (var cfg in kvp.Value)
             {
-                var index = kvp.Value.FindKeyIndex(cfg.Key);
-                
                 if (hasSection)
                 {
-                    builder.AppendLine();
-                    
                     if (!string.IsNullOrEmpty(cfg.Value.Key))
                     {
-                        var commentLines = cfg.Value.Key.SplitLines();
+                        var commentLines = cfg.Value.Key.Split('\n');
 
-                        if (index != 0)
-                            builder.AppendLine();
-                        
                         foreach (var comment in commentLines)
                             builder.AppendLine($"  # {comment}");
                     }
-                    
+
                     builder.Append("  [");
                     builder.Append(cfg.Key);
                     builder.AppendLine("]");
 
-                    var lines = cfg.Value.Value.SplitLines();
+                    var lines = cfg.Value.Value.Split('\n');
 
                     foreach (var line in lines)
                     {
                         builder.Append("  ");
                         builder.AppendLine(line);
                     }
-                    
-                    builder.RemoveTrailingWhiteSpaces(true);
                 }
                 else
                 {
-                    builder.AppendLine();
-                    
                     if (!string.IsNullOrEmpty(cfg.Value.Key))
                     {
-                        var commentLines = cfg.Value.Key.SplitLines();
+                        var commentLines = cfg.Value.Key.Split('\n');
 
                         foreach (var comment in commentLines)
                             builder.AppendLine($"  # {comment}");
@@ -135,15 +124,21 @@ public static class ConfigWriter
 
             if (hasSection)
             {
-                builder.AppendLine();
-                builder.Append("}");
                 builder.RemoveTrailingWhiteSpaces(true);
+                
+                builder.AppendLine();
+                builder.AppendLine("}");
+                builder.AppendLine();
+            }
+            else
+            {
+                builder.AppendLine();
             }
         }
 
         var result = builder.ToString();
 
         builder.Clear();
-        return result.Trim(' ', '\n');
+        return result;
     }
 }

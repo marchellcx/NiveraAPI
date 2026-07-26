@@ -291,7 +291,9 @@ public class Entity
         if (Info == null)
             throw new Exception("Entity has no info!");
 
-        var array = Manager.IsServer ? Info.Rpcs : Info.Cmds;
+        var array = Manager.IsServer 
+            ? Info.Rpcs
+            : Info.Cmds;
         
         if (array == null)
             throw new Exception("Entity has no RPCs / CMDs!");

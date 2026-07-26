@@ -28,6 +28,10 @@ namespace NiveraAPI.IO.Network;
 /// </remarks>
 public class NetClient : ServiceCollection
 {
+    internal volatile bool gotData = false;
+    internal volatile bool debugLogs;
+
+    private volatile bool requireData;
     private volatile int recvThreads = 8;
 
     private volatile Socket socket;
@@ -67,6 +71,24 @@ public class NetClient : ServiceCollection
     {
         get => recvThreads;
         set => recvThreads = value;
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the client requires data from the remote server before establishing a connection.
+    /// </summary>
+    public bool RequireData
+    {
+        get => requireData;
+        set => requireData = value;
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether debug logs are enabled for the network client.
+    /// </summary>
+    public bool DebugLogs
+    {
+        get => debugLogs;
+        set => debugLogs = value;
     }
 
     /// <summary>
@@ -134,7 +156,7 @@ public class NetClient : ServiceCollection
             {
                 while (recvPipe.TryGrab(out var data))
                 {
-                    log.Debug($"Processing received data: {data.Reader.Count} bytes");
+                    log.DebugIf($"Processing received data: {data.Reader.Count} bytes", debugLogs);
                     
                     try
                     {
@@ -174,15 +196,17 @@ public class NetClient : ServiceCollection
 
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            log.Debug("Connecting thread started");
+            log.DebugIf("Connecting thread started", debugLogs);
             
             while (!connected)
             {
                 try
                 {
+                    gotData = false;
+                    
                     socket?.Dispose();
                     
-                    log.Debug($"Connecting to {target} ..");
+                    log.DebugIf($"Connecting to {target} ..", debugLogs);
 
                     socket = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
                     socket.Blocking = false;
@@ -192,6 +216,17 @@ public class NetClient : ServiceCollection
                     
                     socket.Connect(target);
 
+                    if (requireData)
+                    {
+                        socket.Send(new byte[] { 0x1 }, SocketFlags.None);
+
+                        recvPipe = new(this, socket);
+                        recvPipe.Start();
+
+                        while (!gotData)
+                            continue;
+                    }
+
                     connected = true;
                     connecting = false;
 
@@ -199,7 +234,7 @@ public class NetClient : ServiceCollection
 
                     queue.AddToQueue(OnConnected);
                     
-                    log.Debug($"Connected!");
+                    log.DebugIf("Connected!", debugLogs);
                 }
                 catch (Exception ex)
                 {
@@ -218,22 +253,46 @@ public class NetClient : ServiceCollection
     {
         try
         {
-            log.Debug("Disconnecting ..");
+            gotData = false;
+            
+            log.DebugIf("Disconnecting ..", debugLogs);
 
-            if (sendCts is { IsCancellationRequested: false })
-                sendCts.Cancel();
-            
-            if (connectCts is { IsCancellationRequested: false })
-                connectCts.Cancel();
-            
-            if (socket is { Connected: true })
-                socket.Disconnect(false);
+            try
+            {
+                if (sendCts is { IsCancellationRequested: false })
+                    sendCts.Cancel();
+            }
+            catch
+            {
+                // ignored
+            }
+
+            try
+            {
+                if (connectCts is { IsCancellationRequested: false })
+                    connectCts.Cancel();
+            }
+            catch
+            {
+                // ignored
+            }
+
+            try
+            {
+                if (socket is { Connected: true })
+                    socket.Disconnect(false);
+            }
+            catch
+            {
+                // ignored
+            }
 
             if (Connection != null)
             {
                 Disconnected?.Invoke();
+
+                RemoveService(typeof(NetConnection));
                 
-                Connection.Stop();
                 Connection = null;
             }
         }
@@ -248,7 +307,7 @@ public class NetClient : ServiceCollection
     {
         base.Stop();
         
-        log.Debug("Stopping client ..");
+        log.DebugIf("Stopping client ..", debugLogs);
         
         Disconnect();
         
@@ -281,31 +340,35 @@ public class NetClient : ServiceCollection
 
     private void OnConnected()
     {
-        log.Debug("Setting up local connection ..");
-        
-        recvPipe = new(this, socket);
-        recvPipe.Start();
-        
-        log.Debug("RecvPipe started");
+        log.DebugIf("Setting up local connection ..", debugLogs);
+
+        if (!requireData)
+        {
+            recvPipe = new(this, socket);
+            recvPipe.Start();
+            
+            log.DebugIf("RecvPipe started", debugLogs);
+        }
 
         sendPipe = new(this, socket);
         
-        log.Debug("SendPipe started");
+        log.DebugIf("SendPipe started", debugLogs);
         
         Connection = new(this, socket, current, 0);
-        Connection.Start();
+
+        AddService(Connection);
         
-        log.Debug("Connection started");
+        log.DebugIf("Connection started", debugLogs);
         
         Services.ForEach(t => Connection.AddService(t, []));
 
-        log.Debug("Services added");
+        log.DebugIf("Services added", debugLogs);
         
         sendCts = new();
         
         ThreadPool.QueueUserWorkItem(_ => InternalUpdate());
         
-        log.Debug("Update thread started");
+        log.DebugIf("Update thread started", debugLogs);
         
         Connected?.Invoke();
     }

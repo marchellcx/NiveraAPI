@@ -177,6 +177,8 @@ public class ClientRecvPipe
         
         if (args.BytesTransferred > 0)
         {
+            client.gotData = true;
+            
             data.Reader.Offset = 0;
             data.Reader.Position = 0;
             

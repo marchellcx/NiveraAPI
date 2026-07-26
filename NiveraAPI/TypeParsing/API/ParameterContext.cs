@@ -1,4 +1,5 @@
 ﻿using NiveraAPI.TokenParsing;
+using NiveraAPI.TokenParsing.Interfaces;
 using NiveraAPI.TokenParsing.Tokens;
 using NiveraAPI.Utilities;
 
@@ -99,50 +100,105 @@ public class ParameterContext
         => NextToken is T;
 
     /// <summary>
-    /// Determines whether the current token is a <see cref="StringToken"/> and extracts its value if true.
+    /// Determines if the current token is a string token and optionally performs conversions if allowed.
     /// </summary>
-    /// <param name="value">When this method returns, contains the value of the current token if it is a <see cref="StringToken"/>, otherwise an empty string.</param>
-    /// <returns>
-    /// <c>true</c> if the current token is a <see cref="StringToken"/>; otherwise, <c>false</c>.
-    /// </returns>
-    public bool CurTokenIsString(out string value)
+    /// <param name="allowConversions">Indicates whether token conversions are allowed if the current token is not a direct string token.</param>
+    /// <param name="value">The string representation of the current token, if applicable. Otherwise, an empty string.</param>
+    /// <returns>True if the current token is a string token or can be converted to a string; otherwise, false.</returns>
+    public bool CurTokenIsString(bool allowConversions, out string value)
     {
         value = string.Empty;
 
         if (CurrentToken is not StringToken stringToken)
+        {
+            if (allowConversions)
+            {
+                if (CurrentToken is IStringToken stringConvertableToken)
+                {
+                    value = stringConvertableToken.ConvertToString();
+                    return true;
+                }
+
+                if (CurrentToken is IConvertableToken convertableToken
+                    && convertableToken.TryConvert(typeof(string), out var convertedValue))
+                {
+                    value = convertedValue?.ToString() ?? string.Empty;
+                    return true;
+                }
+            }
+
             return false;
-        
+        }
+
         value = stringToken.Value;
         return true;
     }
 
     /// <summary>
-    /// Checks if the next token is a string token and retrieves its value if it is.
+    /// Checks if the next token is a string and optionally allows type conversions.
     /// </summary>
-    /// <param name="value">The output parameter to store the value of the string token if the next token is a string.</param>
-    /// <returns>True if the next token is a string token, otherwise false.</returns>
-    public bool NextTokenIsString(out string value)
+    /// <param name="allowConversions">Specifies whether conversions from other token types to a string are permitted.</param>
+    /// <param name="value">When the method returns, contains the string value if the next token is a string or successfully convertible. Otherwise, contains an empty string.</param>
+    /// <returns>True if the next token is a string or successfully convertible to a string; otherwise, false.</returns>
+    public bool NextTokenIsString(bool allowConversions, out string value)
     {
         value = string.Empty;
 
         if (NextToken is not StringToken stringToken)
+        {
+            if (allowConversions)
+            {
+                if (NextToken is IStringToken stringConvertableToken)
+                {
+                    value = stringConvertableToken.ConvertToString();
+                    return true;
+                }
+
+                if (NextToken is IConvertableToken convertableToken
+                    && convertableToken.TryConvert(typeof(string), out var convertedValue))
+                {
+                    value = convertedValue?.ToString() ?? string.Empty;
+                    return true;
+                }
+            }
+
             return false;
+        }
         
         value = stringToken.Value;
         return true;
     }
 
     /// <summary>
-    /// Determines if the previous token is a string token and retrieves its value if so.
+    /// Determines whether the previous token is a string token or can be converted to a string.
     /// </summary>
-    /// <param name="value">The string value of the previous token, if it is a string token. Empty if not.</param>
-    /// <returns>True if the previous token is a string token; otherwise, false.</returns>
-    public bool PrevTokenIsString(out string value)
+    /// <param name="allowConversions">Specifies whether type conversions are allowed for the token.</param>
+    /// <param name="value">Outputs the string representation of the previous token if it is a string or can be converted.</param>
+    /// <returns>True if the previous token is a string token or can be converted to a string; otherwise, false.</returns>
+    public bool PrevTokenIsString(bool allowConversions, out string value)
     {
         value = string.Empty;
 
         if (PreviousToken is not StringToken stringToken)
+        {
+            if (allowConversions)
+            {
+                if (PreviousToken is IStringToken stringConvertableToken)
+                {
+                    value = stringConvertableToken.ConvertToString();
+                    return true;
+                }
+
+                if (PreviousToken is IConvertableToken convertableToken
+                    && convertableToken.TryConvert(typeof(string), out var convertedValue))
+                {
+                    value = convertedValue?.ToString() ?? string.Empty;
+                    return true;
+                }
+            }
+
             return false;
+        }
         
         value = stringToken.Value;
         return true;

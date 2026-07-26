@@ -330,8 +330,8 @@ public static class NetTests
         }
     }
     
-    private static volatile NetClient client;
-    private static volatile NetServer server;
+    private static volatile NetClient clientSocket;
+    private static volatile NetServer serverSocket;
     
     /// <summary>
     /// The log sink for the tests.
@@ -353,35 +353,35 @@ public static class NetTests
         
         Log.Info("Creating client ..");
         
-        client = new();
+        clientSocket = new();
         
-        client.Connected += () =>
+        clientSocket.Connected += () =>
         {
             Log.Info("Client has connected");
             
-            client.Connection.RegisterHandler<HelloMessage>(msg => Log.Info($"Received message: &1{msg}&r"));
+            clientSocket.Connection.RegisterHandler<HelloMessage>(msg => Log.Info($"Received message: &1{msg}&r"));
             
-            client.Connection.RegisterHandler<LogTimeMessage>(msg =>
+            clientSocket.Connection.RegisterHandler<LogTimeMessage>(msg =>
             {
-                var timeTicks = client.Connection.Time.Ticks + (DateTime.UtcNow.Ticks - msg.SentTicks);
+                var timeTicks = clientSocket.Connection.Time.Ticks + (DateTime.UtcNow.Ticks - msg.SentTicks);
                 var timeMs = (float)(timeTicks / TimeSpan.TicksPerMillisecond);
                 
                 Log.Info($"Time: &1{timeMs}&r ms (&3{timeTicks}&r ticks)");
             });
         };
         
-        client.Disconnected += () => Log.Info("Client has disconnected");
+        clientSocket.Disconnected += () => Log.Info("Client has disconnected");
 
         EntityManager.RegisterEntity<ClientEntity>(() => new ClientEntity());
         
-        client.Services.Add(typeof(EntityManager));
-        client.Start();
+        clientSocket.Services.Add(typeof(EntityManager));
+        clientSocket.Start();
         
-        LibraryUpdate.Register(client.Update);
+        LibraryUpdate.Register(clientSocket.Update);
         
         Log.Info("Connecting to server ..");
         
-        client.Connect(new(IPAddress.Loopback, port));
+        clientSocket.Connect(new(IPAddress.Loopback, port));
     }
     
     internal static void Server()
@@ -399,9 +399,9 @@ public static class NetTests
         
         Log.Info("Creating server ..");
         
-        server = new();
+        serverSocket = new();
         
-        server.Connected += peer =>
+        serverSocket.Connected += peer =>
         {
             Log.Info($"Client has connected from &1{peer.EndPoint}&r");
             
@@ -426,36 +426,36 @@ public static class NetTests
             manager.TrySpawnEntity<ServerEntity>(out _);
         };
         
-        server.Disconnected += peer => Log.Info($"Client has disconnected from &1{peer.EndPoint}&r");
+        serverSocket.Disconnected += peer => Log.Info($"Client has disconnected from &1{peer.EndPoint}&r");
 
         EntityManager.RegisterEntity<ServerEntity>(() => new ServerEntity());
         
-        server.ProvidedServices.Add(typeof(EntityManager));
-        server.Start();
+        serverSocket.ProvidedServices.Add(typeof(EntityManager));
+        serverSocket.Start();
         
-        LibraryUpdate.Register(server.Update);
+        LibraryUpdate.Register(serverSocket.Update);
         
         Log.Info("Server started");
         
-        server.Listen(port);
+        serverSocket.Listen(port);
     }
 
     [Overload("ping", "Shows the ping of the client / server peer.")]
     private static void Ping(ref CommandContext<object> ctx)
     {
-        if (client != null)
+        if (clientSocket != null)
         {
-            if (client.Connection == null)
+            if (clientSocket.Connection == null)
             {
                 ctx.SetFailText("Not connected.");
                 return;
             }
             
-            ctx.SetOkText($"Ping: {client.Connection.Ping.Last} ms ({client.Connection.Ping.Average} ms avg)");
+            ctx.SetOkText($"Ping: {clientSocket.Connection.Ping.Last} ms ({clientSocket.Connection.Ping.Average} ms avg)");
         }
-        else if (server != null)
+        else if (serverSocket != null)
         {
-            var peer = server.Connections.FirstOrDefault();
+            var peer = serverSocket.Connections.FirstOrDefault();
 
             if (peer == null)
             {
@@ -474,26 +474,26 @@ public static class NetTests
     [Overload("time", "Shows the current time of the client / server peer.")]
     private static void Time(ref CommandContext<object> ctx)
     {
-        if (client != null)
+        if (clientSocket != null)
         {
-            if (client.Connection == null)
+            if (clientSocket.Connection == null)
             {
                 ctx.SetFailText("Not connected.");
                 return;
             }
             
-            var timeTicks = client.Connection.Time.Ticks;
-            var timeMs = client.Connection.Time.Time * 1000f;
+            var timeTicks = clientSocket.Connection.Time.Ticks;
+            var timeMs = clientSocket.Connection.Time.Time * 1000f;
             
             var curTicks = DateTime.UtcNow.Ticks;
             
-            client.Connection.Send(new LogTimeMessage() { SentTicks = curTicks });
+            clientSocket.Connection.Send(new LogTimeMessage() { SentTicks = curTicks });
             
             ctx.SetOkText($"Time: {timeMs} ms ({timeTicks} ticks)");
         }
-        else if (server != null)
+        else if (serverSocket != null)
         {
-            var peer = server.Connections.FirstOrDefault();
+            var peer = serverSocket.Connections.FirstOrDefault();
 
             if (peer == null)
             {
@@ -519,21 +519,21 @@ public static class NetTests
     [Overload("hello", "Sends a HelloMessage to the client / server peer.")]
     private static void Hello(ref CommandContext<object> ctx)
     {
-        if (client != null)
+        if (clientSocket != null)
         {
-            if (client.Connection == null)
+            if (clientSocket.Connection == null)
             {
                 ctx.SetFailText("Not connected.");
                 return;
             }
             
-            client.Connection.Send(new HelloMessage());
+            clientSocket.Connection.Send(new HelloMessage());
             
             ctx.SetOkText("Hello message sent FROM client");
         }
-        else if (server != null)
+        else if (serverSocket != null)
         {
-            var peer = server.Connections.FirstOrDefault();
+            var peer = serverSocket.Connections.FirstOrDefault();
 
             if (peer == null)
             {

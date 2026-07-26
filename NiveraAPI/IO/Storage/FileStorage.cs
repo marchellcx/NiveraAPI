@@ -89,6 +89,23 @@ public class FileStorage : IDisposable
     }
 
     /// <summary>
+    /// Searches for a file object with the specified name in the current storage directory.
+    /// </summary>
+    /// <param name="name">The name of the file object to locate within the storage directory.</param>
+    /// <returns>
+    /// The <see cref="FileObject"/> associated with the given name if found; otherwise, null if the file object does not exist.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when the provided name is null or an empty string.</exception>
+    public FileObject? Find(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            throw new ArgumentNullException(nameof(name));
+
+        var path = Path.Combine(Directory, name);
+        return files.Find(file => file.Directory == path);
+    }
+
+    /// <summary>
     /// Creates a new file object with the specified name, or retrieves an existing one if it already exists in the directory.
     /// </summary>
     /// <param name="name">The name of the file object to create or retrieve.</param>
@@ -111,6 +128,7 @@ public class FileStorage : IDisposable
 
         active = new();
 
+        active.Name = name;
         active.Storage = this;
         active.Directory = path;
         

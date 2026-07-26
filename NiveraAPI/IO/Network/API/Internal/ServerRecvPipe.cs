@@ -13,6 +13,8 @@ namespace NiveraAPI.IO.Network.API.Internal;
 public class ServerRecvPipe
 {
     private static volatile IPEndPoint defaultEp = new(IPAddress.Any, 0);
+
+    private volatile bool dummyReceived;
     
     private volatile Socket socket;
     private volatile NetServer server;
@@ -167,12 +169,21 @@ public class ServerRecvPipe
         {
             if (args.BytesTransferred > 0)
             {
-                data.Reader.Offset = 0;
-                data.Reader.Position = 0;
+                if (args.Buffer.Length == 1 
+                    && !dummyReceived
+                    && args.Buffer[0] == 0x1)
+                {
+                    dummyReceived = true;
+                }
+                else
+                {
+                    data.Reader.Offset = 0;
+                    data.Reader.Position = 0;
 
-                data.Reader.Count = args.BytesTransferred;
+                    data.Reader.Count = args.BytesTransferred;
 
-                dataQueue.Enqueue(data);
+                    dataQueue.Enqueue(data);
+                }
 
                 Interlocked.Add(ref recvBytes, args.BytesTransferred);
                 

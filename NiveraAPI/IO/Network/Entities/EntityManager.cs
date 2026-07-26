@@ -1,5 +1,7 @@
 ﻿using NiveraAPI.Extensions;
+
 using NiveraAPI.IO.Network.Entities.Messages;
+
 using NiveraAPI.IO.Serialization;
 using NiveraAPI.IO.Serialization.Interfaces;
 
@@ -38,6 +40,16 @@ public class EntityManager : NetService
     /// </returns>
     public static bool IsRegistered<T>() where T : Entity
         => constructors.ContainsKey(typeof(T).FullName);
+
+    /// <summary>
+    /// Determines whether an entity of the specified type is registered in the system.
+    /// </summary>
+    /// <param name="type">The type of the entity to check for registration.</param>
+    /// <returns>
+    /// True if the entity type is registered; otherwise, false.
+    /// </returns>
+    public static bool IsRegistered(Type type)
+        => type != null && constructors.ContainsKey(type.FullName);
     
     /// <summary>
     /// Registers an entity of the specified type with the provided constructor.
@@ -66,8 +78,34 @@ public class EntityManager : NetService
         
         constructors[info.RemoteTypeName(true)] = constructor;
         constructors[info.RemoteTypeName(false)] = constructor;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Registers an entity type along with its construction logic.
+    /// </summary>
+    /// <param name="type">The type of the entity to register.</param>
+    /// <param name="constructor">A delegate that provides the construction logic for the entity.</param>
+    /// <returns>
+    /// True if the entity type was successfully registered; otherwise, false if it was already registered.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when the <paramref name="constructor"/> is null.</exception>
+    public static bool RegisterEntity(Type type, Func<Entity> constructor)
+    {
+        if (constructor == null)
+            throw new ArgumentNullException(nameof(constructor));
+
+        if (constructors.ContainsKey(type.FullName))
+            return false;
         
-        ReorderConstructors();
+        constructors[type.FullName] = constructor;
+
+        var info = EntityInfo.GetInfo(type);
+        
+        constructors[info.RemoteTypeName(true)] = constructor;
+        constructors[info.RemoteTypeName(false)] = constructor;
+
         return true;
     }
 
@@ -83,31 +121,45 @@ public class EntityManager : NetService
     /// </exception>
     public static bool UnregisterEntity<T>() where T : Entity
     {
-        if (typeof(T) == null)
-            throw new ArgumentNullException(nameof(T));
-
         if (constructors.Remove(typeof(T).FullName))
         {
             var info = EntityInfo.GetInfo(typeof(T));
 
             constructors.Remove(info.RemoteTypeName(true));
             constructors.Remove(info.RemoteTypeName(false));
-            
-            ReorderConstructors();
+
             return true;
         }
         
         return false;
     }
 
-    private static void ReorderConstructors()
+    /// <summary>
+    /// Unregisters an entity of the specified type.
+    /// </summary>
+    /// <param name="type">The type of the entity to unregister.</param>
+    /// <returns>
+    /// True if the entity type was successfully unregistered; otherwise, false.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when the specified type is null.
+    /// </exception>
+    public static bool UnregisterEntity(Type type)
     {
-        var ordered = constructors
-            .OrderBy(kvp => kvp.Key)
-            .ToDictionary();
+        if (type == null)
+            throw new ArgumentNullException(nameof(type));
+
+        if (constructors.Remove(type.FullName))
+        {
+            var info = EntityInfo.GetInfo(type);
+
+            constructors.Remove(info.RemoteTypeName(true));
+            constructors.Remove(info.RemoteTypeName(false));
+
+            return true;
+        }
         
-        constructors.Clear();
-        constructors.AddRange(ordered);
+        return false;
     }
     
     private ushort idEnumerator = 0;
@@ -408,7 +460,7 @@ public class EntityManager : NetService
         
         InitEntity(entity, idEnumerator++);
         
-        var msg = new EntitySpawnMessage((ushort)constructors.FindKeyIndex(entity.Info.RemoteTypeName(IsServer)), entity.Id);
+        var msg = new EntitySpawnMessage(entity.Info.RemoteTypeName(IsServer), entity.Id);
 
         WriteCmds(entity, ref msg);
         
@@ -484,7 +536,7 @@ public class EntityManager : NetService
 
             InitEntity(entity, idEnumerator++);
             
-            var msg = new EntitySpawnMessage((ushort)constructors.FindKeyIndex(entity.Info.RemoteTypeName(IsServer)), entity.Id);
+            var msg = new EntitySpawnMessage(entity.Info.RemoteTypeName(IsServer), entity.Id);
 
             WriteCmds(entity, ref msg);
         
@@ -655,19 +707,17 @@ public class EntityManager : NetService
             return;
         }
         
-        var constructor = constructors.ElementAtOrDefault(msg.Type);
-        
-        if (constructor.Value == null)
+        if (!constructors.TryGetValue(msg.Type, out var constructor) || constructor == null)
         {
             Log.Warn($"Received entity spawn message for unknown type: &1{msg.Type}&r");
             return;
         }
         
-        Log.Debug($"Found constructor: &1{constructor.Key}&r, spawning entity ..");
+        Log.Debug($"Found constructor: &1{msg.Type}&r, spawning entity ..");
 
         try
         {
-            var entity = constructor.Value();
+            var entity = constructor();
             
             InitEntity(entity, msg.Id);
             

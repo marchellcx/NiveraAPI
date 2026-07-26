@@ -6,6 +6,11 @@
 public class FileObject
 {
     private List<FileProperty> properties = new(20);
+    
+    /// <summary>
+    /// Gets the name of the file object.
+    /// </summary>
+    public string Name { get; internal set; }
 
     /// <summary>
     /// Gets the path to the directory of this object.
@@ -21,6 +26,27 @@ public class FileObject
     /// Gets a list of all properties registered to the file.
     /// </summary>
     public IReadOnlyList<FileProperty> Properties => properties;
+
+    /// <summary>
+    /// Finds a file property by its name within the current FileObject.
+    /// </summary>
+    /// <remarks>
+    /// Searches the list of properties for a property with a matching name and returns it.
+    /// </remarks>
+    /// <param name="name">The name of the property to find. Cannot be null or empty.</param>
+    /// <returns>
+    /// The file property with the specified name if found; otherwise, null.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="name"/> is null or empty.
+    /// </exception>
+    public FileProperty? Find(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            throw new ArgumentNullException(nameof(name));
+
+        return properties.Find(x => x.Name == name);
+    }
 
     /// <summary>
     /// Removes a file property by its name from the current FileObject.
@@ -72,7 +98,7 @@ public class FileObject
     /// <param name="defaultValue">The default value assigned to the property if it is being created. Optional.</param>
     /// <returns>The added or existing instance of <see cref="FileProperty{T}"/> corresponding to the specified name.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> is null or empty.</exception>
-    public FileProperty<T> Add<T>(string name, T defaultValue = default)
+    public FileProperty<T> Add<T>(string name, T? defaultValue = default)
     {
         if (string.IsNullOrEmpty(name))
             throw new ArgumentNullException(nameof(name));
@@ -83,7 +109,7 @@ public class FileObject
             return (FileProperty<T>)prop;
 
         prop = new FileProperty<T>();
-        prop.value = defaultValue;
+        prop.value = defaultValue!;
         
         prop.File = Path.Combine(Directory, $"{name}.dat");
         prop.Name = name;

@@ -67,6 +67,24 @@ namespace NiveraAPI.Logs
         }
 
         /// <summary>
+        /// Writes a debug-level log message only if the specified condition is false.
+        /// </summary>
+        /// <remarks>
+        /// Use this method to conditionally log debug messages based on the given flag,
+        /// enabling efficient control over debug message output without redundant log generation
+        /// when debugging is disabled.
+        /// </remarks>
+        /// <param name="msg">The object to log. If the object is not a string, its string representation is used.</param>
+        /// <param name="enableDebug">A boolean value indicating whether debug logging is enabled. If true, the message will not be logged.</param>
+        public void DebugIf(object msg, bool enableDebug)
+        {
+            if (enableDebug)
+                return;
+
+            Print(LogLevel.Debug, null, ObjectToString(msg));
+        }
+
+        /// <summary>
         /// Writes a debug-level log message using the specified object as the message content.
         /// </summary>
         /// <remarks>Use this method to record diagnostic information that is useful for debugging.

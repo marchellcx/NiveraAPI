@@ -1,11 +1,11 @@
-﻿using FastGenericNew;
-using NiveraAPI.IO.Serialization.Interfaces;
+﻿using NiveraAPI.IO.Serialization.Interfaces;
 using NiveraAPI.IO.Serialization.Serializers;
-using NiveraAPI.Logs;
-using NiveraAPI.Pooling;
+
 using NiveraAPI.Pooling.Interfaces;
-using NiveraAPI.Extensions;
+
+using NiveraAPI.Logs;
 using NiveraAPI.Utilities;
+using NiveraAPI.Extensions;
 
 namespace NiveraAPI.IO.Serialization;
 

@@ -1,6 +1,6 @@
 ﻿using System.Collections;
 using System.Collections.Concurrent;
-
+using System.Collections.ObjectModel;
 using NiveraAPI.Pooling;
 using NiveraAPI.Utilities;
 
@@ -364,6 +364,72 @@ namespace NiveraAPI.Extensions
             }
             
             return list;
+        }
+
+        /// <summary>
+        /// Finds the next index in the list where the specified value or a custom condition matches, starting from a given index.
+        /// </summary>
+        /// <typeparam name="T">The type of elements in the list.</typeparam>
+        /// <param name="list">The list to search. Cannot be null.</param>
+        /// <param name="curIndex">The current index to start searching from. Must be within the valid range of the list.</param>
+        /// <param name="value">The value to search for in the list.</param>
+        /// <param name="comparer">
+        /// An optional function to determine if an element matches the search criteria.
+        /// If null, the method uses the default equality comparison for the type.
+        /// </param>
+        /// <returns>
+        /// The index of the next occurrence of the value or a matching element according to the comparer,
+        /// or -1 if no match is found.
+        /// </returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="list"/> is null.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown if <paramref name="curIndex"/> is outside the valid range of indexes for the list.</exception>
+        public static int NextIndexOfList<T>(this IList<T> list, int curIndex, T value, Func<T, bool>? comparer = null)
+        {
+            if (curIndex + 1 >= list.Count)
+                return -1;
+
+            for (var i = curIndex + 1; i < list.Count; i++)
+            {
+                var arg = list[i];
+                
+                if (comparer != null && comparer(arg))
+                    return i;
+
+                if (arg != null && arg.Equals(value))
+                    return i;
+            }
+            
+            return -1;
+        }
+
+        /// <summary>
+        /// Finds the next index of a specified value in the given <see cref="IEnumerable{T}"/> collection, starting from the specified current index.
+        /// </summary>
+        /// <typeparam name="T">The type of elements in the collection.</typeparam>
+        /// <param name="values">The collection to search through.</param>
+        /// <param name="curIndex">The current index to start the search from. Must be less than the length of the collection.</param>
+        /// <param name="value">The value to search for in the collection.</param>
+        /// <param name="comparer">An optional custom comparison function to determine equality. If null, the default equality comparer is used.</param>
+        /// <returns>The index of the next occurrence of the specified value, or -1 if not found.</returns>
+        public static int NextIndexOf<T>(this IEnumerable<T> values, int curIndex, T value, Func<T, bool>? comparer = null)
+        {
+            var num = values.GetCountFast();
+
+            if (curIndex + 1 >= num)
+                return -1;
+
+            for (var i = curIndex; i < num; i++)
+            {
+                var arg = values.ElementAtOrDefault(i);
+                
+                if (comparer != null && comparer(arg))
+                    return i;
+
+                if (arg != null && arg.Equals(value))
+                    return i;
+            }
+            
+            return -1;
         }
         
         #region Random Selection Extensions
@@ -930,6 +996,174 @@ namespace NiveraAPI.Extensions
         #endregion
 
         #region Dictionary Extensions
+
+        /// <summary>
+        /// Creates a shallow copy of the specified dictionary.
+        /// </summary>
+        /// <typeparam name="TKey">The type of the keys in the dictionary.</typeparam>
+        /// <typeparam name="TValue">The type of the values in the dictionary.</typeparam>
+        /// <param name="source">The dictionary to copy. Cannot be null.</param>
+        /// <returns>A new dictionary containing the same key-value pairs as the source dictionary.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="source"/> is null.</exception>
+        public static Dictionary<TKey, TValue> Copy<TKey, TValue>(this IDictionary<TKey, TValue> source)
+            => new(source);
+
+        /// <summary>
+        /// Converts the specified <see cref="IDictionary{TKey, TValue}"/> to a <see cref="ReadOnlyDictionary{TKey, TValue}"/>.
+        /// </summary>
+        /// <typeparam name="TKey">The type of the keys in the dictionary.</typeparam>
+        /// <typeparam name="TValue">The type of the values in the dictionary.</typeparam>
+        /// <param name="target">The source dictionary to convert. Cannot be null.</param>
+        /// <returns>A read-only dictionary containing the same keys and values as the source dictionary.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="target"/> is null.</exception>
+        public static ReadOnlyDictionary<TKey, TValue> ReadOnly<TKey, TValue>(this IDictionary<TKey, TValue> target)
+            => new(target);
+
+        /// <summary>
+        /// Creates a pooled copy of the provided <see cref="IDictionary{TKey, TValue}"/>. The copy is obtained
+        /// from a shared dictionary pool, which can help reduce memory allocations for temporary dictionary usage.
+        /// </summary>
+        /// <typeparam name="TKey">The type of keys in the dictionary.</typeparam>
+        /// <typeparam name="TValue">The type of values in the dictionary.</typeparam>
+        /// <param name="source">The dictionary to be copied. Cannot be null.</param>
+        /// <returns>A pooled copy of the source dictionary.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="source"/> is null.</exception>
+        public static Dictionary<TKey, TValue> PooledCopy<TKey, TValue>(this IDictionary<TKey, TValue> source)
+            => DictionaryPool<TKey, TValue>.Shared.Rent(source);
+
+        /// <summary>
+        /// Modifies the values of the dictionary in-place using a provided function, with pooled memory management for intermediate operations.
+        /// </summary>
+        /// <typeparam name="TKey">The type of the keys in the dictionary.</typeparam>
+        /// <typeparam name="TValue">The type of the values in the dictionary.</typeparam>
+        /// <param name="dict">The dictionary to be modified. Cannot be null.</param>
+        /// <param name="func">
+        /// A function that takes a key and its associated value and returns the new value for the key.
+        /// Cannot be null.
+        /// </param>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown if <paramref name="dict"/> or <paramref name="func"/> is null.
+        /// </exception>
+        public static void PooledModify<TKey, TValue>(this IDictionary<TKey, TValue> dict,
+            Func<TKey, TValue, TValue> func)
+        {
+            if (dict == null)
+                throw new ArgumentNullException(nameof(dict));
+
+            if (func == null)
+                throw new ArgumentNullException(nameof(func));
+            
+            var dictionary = dict.PooledCopy();
+
+            foreach (var item in dictionary)
+                dict[item.Key] = func(item.Key, item.Value);
+
+            DictionaryPool<TKey, TValue>.Shared.Return(dictionary);
+        }
+
+        /// <summary>
+        /// Performs a pooled modification on the dictionary by invoking a specified action on each key.
+        /// </summary>
+        /// <typeparam name="TKey">The type of keys in the dictionary.</typeparam>
+        /// <typeparam name="TValue">The type of values in the dictionary.</typeparam>
+        /// <param name="dict">The source dictionary to be modified. Cannot be null.</param>
+        /// <param name="func">
+        /// The action to perform using each key and the original dictionary. Cannot be null.
+        /// The key is passed as an argument, along with the original dictionary.
+        /// </param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="dict"/> or <paramref name="func"/> is null.</exception
+        public static void PooledModify<TKey, TValue>(this IDictionary<TKey, TValue> dict,
+            Action<TKey, IDictionary<TKey, TValue>> func)
+        {
+            if (dict == null)
+                throw new ArgumentNullException(nameof(dict));
+
+            if (func == null)
+                throw new ArgumentNullException(nameof(func));
+            
+            var dictionary = dict.PooledCopy();
+            
+            foreach (KeyValuePair<TKey, TValue> item in dictionary)
+                func?.Invoke(item.Key, dict);
+            
+            DictionaryPool<TKey, TValue>.Shared.Return(dictionary);
+        }
+        
+        /// <summary>
+        /// Copies all key-value pairs from the source dictionary to the target dictionary, replacing any existing elements in the target.
+        /// </summary>
+        /// <typeparam name="TKey">The type of keys in the dictionary.</typeparam>
+        /// <typeparam name="TValue">The type of values in the dictionary.</typeparam>
+        /// <param name="target">The dictionary that will receive the key-value pairs. Cannot be null.</param>
+        /// <param name="source">The dictionary from which key-value pairs will be copied. Cannot be null.</param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="target"/> or <paramref name="source"/> is null.</exception>
+        public static void CopyFrom<TKey, TValue>(this IDictionary<TKey, TValue> target,
+            IDictionary<TKey, TValue> source)
+        {
+            target.Clear();
+
+            source.ForEach(p =>
+            {
+                target[p.Key] = p.Value;
+            });
+        }
+
+        /// <summary>
+        /// Copies all the key-value pairs from the provided source collection into the target dictionary,
+        /// replacing any existing items in the target dictionary. The target dictionary is cleared before copying.
+        /// </summary>
+        /// <typeparam name="TKey">The type of keys in the dictionary.</typeparam>
+        /// <typeparam name="TValue">The type of values in the dictionary.</typeparam>
+        /// <param name="target">The target dictionary to copy items into. Cannot be null.</param>
+        /// <param name="source">The source collection of key-value pairs to copy from. Cannot be null.</param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="target"/> or <paramref name="source"/> is null.</exception>
+        public static void CopyFrom<TKey, TValue>(this IDictionary<TKey, TValue> target,
+            IEnumerable<KeyValuePair<TKey, TValue>> source)
+        {
+            target.Clear();
+            
+            source.ForEach(p =>
+            {
+                target[p.Key] = p.Value;
+            });
+        }
+
+        /// <summary>
+        /// Initializes a value in the dictionary for the specified key if it does not already exist.
+        /// Creates a new instance of the value type using its parameterless constructor.
+        /// </summary>
+        /// <typeparam name="TKey">The type of the keys in the dictionary.</typeparam>
+        /// <typeparam name="TValue">The type of the values in the dictionary. Must have a parameterless constructor.</typeparam>
+        /// <param name="target">The dictionary in which to ensure the key has an initialized value.</param>
+        /// <param name="key">The key to check or initialize in the dictionary.</param>
+        public static void InitValue<TKey, TValue>(this IDictionary<TKey, TValue> target, TKey key) where TValue : new()
+        {
+            if (!target.ContainsKey(key))
+            {
+                target[key] = new TValue();
+            }
+        }
+
+        /// <summary>
+        /// Initializes a value in the dictionary for the specified key, using the provided factory method
+        /// to generate the value if the key does not already exist.
+        /// </summary>
+        /// <typeparam name="TKey">The type of keys in the dictionary.</typeparam>
+        /// <typeparam name="TValue">The type of values in the dictionary.</typeparam>
+        /// <param name="target">The dictionary to initialize the value in. Cannot be null.</param>
+        /// <param name="key">The key for which the value should be initialized. Cannot be null.</param>
+        /// <param name="factory">The factory method to generate the value if the key does not exist. Cannot be null.</param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="target"/>, <paramref name="key"/>, or <paramref name="factory"/> is null.</exception>
+        public static void InitValue<TKey, TValue>(this IDictionary<TKey, TValue> target, TKey key,
+            Func<TValue> factory)
+        {
+            if (factory == null)
+                throw new ArgumentNullException(nameof(factory));
+
+            if (!target.ContainsKey(key))
+                target[key] = factory();
+        }
+        
         /// <summary>
         /// Reorders the elements of the dictionary in place according to a specified key selector and sort direction.
         /// </summary>

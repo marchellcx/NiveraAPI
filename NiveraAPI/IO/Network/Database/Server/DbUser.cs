@@ -40,21 +40,6 @@ public class DbUser : NetService
     /// The permissions of the user.
     /// </summary>
     public DbPerms Permissions { get; set; } = DbPerms.None;
-    
-    /// <summary>
-    /// The services required by this service.
-    /// </summary>
-    public override Type[] RequiredServices { get; } = [typeof(DbServer)];
-
-    /// <summary>
-    /// Determines whether the specified service collection allows a new service to be added.
-    /// </summary>
-    /// <param name="collection">The service collection to check.</param>
-    /// <returns>
-    /// True if the service can be added to the collection; otherwise, false.
-    /// </returns>
-    public override bool CanBeAdded(IServiceCollection collection)
-        => collection is NetConnection;
 
     /// <summary>
     /// Starts the service.
@@ -63,7 +48,7 @@ public class DbUser : NetService
     {
         base.Start();
         
-        Server = Collection.GetService<DbServer>();
+        Server = Connection.Server.GetService<DbServer>();
 
         IsAuthenticated = false;
         AttemptedAuth = false;

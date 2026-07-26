@@ -12,7 +12,7 @@ public struct EntitySpawnMessage : ISerializableObject
     /// <summary>
     /// The name of the type of entity to spawn.
     /// </summary>
-    public ushort Type;
+    public string Type;
     
     /// <summary>
     /// The ID of the entity to spawn.
@@ -27,7 +27,7 @@ public struct EntitySpawnMessage : ISerializableObject
     /// <summary>
     /// Creates a new instance of the EntitySpawnMessage class.
     /// </summary>
-    public EntitySpawnMessage(ushort type, ushort id)
+    public EntitySpawnMessage(string type, ushort id)
     {
         Type = type;
         Id = id;
@@ -44,7 +44,7 @@ public struct EntitySpawnMessage : ISerializableObject
     /// <param name="writer">The ByteWriter instance used to write the serialized data.</param>
     public void Serialize(ByteWriter writer)
     {
-        writer.WriteUInt16(Type);
+        writer.WriteString(Type);
         writer.WriteUInt16(Id);
 
         if (Cmds is null)
@@ -65,7 +65,7 @@ public struct EntitySpawnMessage : ISerializableObject
     /// <param name="reader">The ByteReader instance used to read the serialized data.</param>
     public void Deserialize(ByteReader reader)
     {
-        Type = reader.ReadUInt16();
+        Type = reader.ReadString();
         Id = reader.ReadUInt16();
 
         var count = reader.ReadByte();

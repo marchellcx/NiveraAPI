@@ -15,6 +15,8 @@ public class NetServer : ServiceCollection
 {
     private static volatile LogSink log = LogManager.GetSource("IO", "NetServer");
 
+    internal volatile bool debugLogs;
+    
     private volatile int connId = 0;
     private volatile int recvThreads = 8;
     
@@ -59,6 +61,15 @@ public class NetServer : ServiceCollection
     }
 
     /// <summary>
+    /// Whether debug logs are enabled.
+    /// </summary>
+    public bool DebugLogs
+    {
+        get => debugLogs;
+        set => debugLogs = value;
+    }
+
+    /// <summary>
     /// Gets the logging mechanism associated with the network server.
     /// </summary>
     public LogSink Log => log;
@@ -80,7 +91,7 @@ public class NetServer : ServiceCollection
     /// <param name="port">The port on which the server will listen for incoming connections. Use 0 to let the operating system assign a random available port.</param>
     public void Listen(int port = 0)
     {
-        log.Debug($"Starting server on port {port}...");
+        log.DebugIf($"Starting server on port {port}...", debugLogs);
         
         if (socket != null)
             Stop();
@@ -91,7 +102,7 @@ public class NetServer : ServiceCollection
         connId = 0;
         sentBytes = 0;
         
-        log.Debug("Creating socket...");
+        log.DebugIf("Creating socket...", debugLogs);
         
         socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         socket.Blocking = false;
@@ -99,35 +110,35 @@ public class NetServer : ServiceCollection
         socket.SendBufferSize = NetSettings.MTU;
         socket.ReceiveBufferSize = NetSettings.MTU;
         
-        log.Debug("Binding socket...");
+        log.DebugIf("Binding socket...", debugLogs);
         
         socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.ReuseAddress, true);
         socket.Bind(new IPEndPoint(IPAddress.Any, port));
 
-        log.Debug($"Bound to port {port}");
+        log.DebugIf($"Bound to port {port}", debugLogs);
         
         recvPipe = new(this, socket);
         recvPipe.Start();
         
-        log.Debug("RecvPipe started");
+        log.DebugIf("RecvPipe started", debugLogs);
 
         cts = new();
         
         ThreadPool.QueueUserWorkItem(_ => Send());
         
-        log.Debug("Send thread started");
+        log.DebugIf("Send thread started", debugLogs);
     }
 
     /// <inheritdoc />
     public override void Stop()
     {
-        log.Debug("Stopping server...");
+        log.DebugIf("Stopping server...", debugLogs);
         
         base.Stop();
         
         cts.Cancel();
         
-        log.Debug("Stopping RecvPipe");
+        log.DebugIf("Stopping RecvPipe", debugLogs);
 
         if (recvPipe != null)
         {
@@ -135,7 +146,7 @@ public class NetServer : ServiceCollection
             recvPipe = null!;
         }
         
-        log.Debug("Stopping connections...");
+        log.DebugIf("Stopping connections...", debugLogs);
 
         for (var x = 0; x < conns.Length; x++)
         {
@@ -153,7 +164,7 @@ public class NetServer : ServiceCollection
         {
             if (socket != null)
             {
-                log.Debug("Closing socket...");
+                log.DebugIf("Closing socket...", debugLogs);
                 
                 socket.Close();
                 socket.Dispose();
@@ -164,7 +175,7 @@ public class NetServer : ServiceCollection
             log.Error(ex);
         }
         
-        log.Debug("Clearing send pool");
+        log.DebugIf("Clearing send pool", debugLogs);
 
         while (sendPool.TryDequeue(out var data))
         {
@@ -176,7 +187,7 @@ public class NetServer : ServiceCollection
 
         conns = [];
         
-        log.Debug("Server stopped");
+        log.DebugIf("Server stopped", debugLogs);
     }
 
     /// <summary>
@@ -229,7 +240,7 @@ public class NetServer : ServiceCollection
                         continue;
                     }
                     
-                    log.Debug($"Received {data.Reader.Count} bytes from {ip}");
+                    log.DebugIf($"Received {data.Reader.Count} bytes from {ip}", debugLogs);
 
                     if (conn == null)
                         conn = RegisterConnection(ip);
@@ -262,7 +273,7 @@ public class NetServer : ServiceCollection
 
             if (conn.Ping.IsTimedOut)
             {
-                log.Debug($"Connection &1{conn.EndPoint}&r timed out, removing");
+                log.DebugIf($"Connection &1{conn.EndPoint}&r timed out, removing", debugLogs);
                 
                 RemoveConnection(conn);
             }
@@ -283,19 +294,19 @@ public class NetServer : ServiceCollection
                 
                 if (FindConnection(endPoint) is { } conn)
                 {
-                    log.Debug("Removing connection due to send failure");
+                    log.DebugIf("Removing connection due to send failure", debugLogs);
                     
                     RemoveConnection(conn);
                 }
                 else
                 {
-                    log.Debug("Connection not found, skipping");
+                    log.DebugIf("Connection not found, skipping", debugLogs);
                 }
             }
             
             Interlocked.Add(ref sentBytes, args.BytesTransferred);
             
-            log.Debug($"Sent {args.BytesTransferred} bytes ({sentBytes} total)");
+            log.DebugIf($"Sent {args.BytesTransferred} bytes ({sentBytes} total)", debugLogs);
         }
         
         SendData GetData()
@@ -330,13 +341,13 @@ public class NetServer : ServiceCollection
                     
                     var data = GetData();
                     
-                    log.Debug($"Connection &1{conn.EndPoint}&r has data, serializing ..");
+                    log.DebugIf($"Connection &1{conn.EndPoint}&r has data, serializing ..", debugLogs);
 
                     try
                     {
                         if (!conn.TryWrite(data.Writer))
                         {
-                            log.Debug($"Connection &1{conn.EndPoint}&r is not ready to send data, queuing ..");
+                            log.DebugIf($"Connection &1{conn.EndPoint}&r is not ready to send data, queuing ..", debugLogs);
                             
                             sendPool.Enqueue(data);
                             continue;
@@ -345,7 +356,7 @@ public class NetServer : ServiceCollection
                         data.Args.RemoteEndPoint = conn.serverSendEndPoint;
                         data.Args.SetBuffer(data.Args.Buffer, 0, data.Writer.Position);
 
-                        log.Debug($"Sending &1{data.Writer.Position}&r bytes to &1{conn.EndPoint}&r ({conn.serverSendEndPoint}) ..");
+                        log.DebugIf($"Sending &1{data.Writer.Position}&r bytes to &1{conn.EndPoint}&r ({conn.serverSendEndPoint}) ..", debugLogs);
 
                         var pending = socket.SendToAsync(data.Args);
                         
@@ -371,7 +382,7 @@ public class NetServer : ServiceCollection
     {
         queue.AddToQueue(() =>
         {
-            log.Debug($"Removing connection {conn.Id}");
+            log.DebugIf($"Removing connection {conn.Id}", debugLogs);
             
             try
             {
@@ -405,7 +416,7 @@ public class NetServer : ServiceCollection
 
     private NetConnection RegisterConnection(IPEndPoint endPoint)
     {
-        log.Debug($"Registering new connection: {endPoint}");
+        log.DebugIf($"Registering new connection: {endPoint}", debugLogs);
         
         var conn = new NetConnection(this, endPoint, Interlocked.Increment(ref connId));
         

@@ -1,11 +1,13 @@
 ﻿using System.Text;
+
 using NiveraAPI.IO.Network.Database.Enums;
 using NiveraAPI.IO.Network.Database.Messages;
+
 using NiveraAPI.IO.Serialization;
 using NiveraAPI.IO.Serialization.Interfaces;
+
 using NiveraAPI.Pooling;
 using NiveraAPI.Services;
-using NiveraAPI.Services.Interfaces;
 using NiveraAPI.Utilities;
 
 namespace NiveraAPI.IO.Network.Database.Client;
@@ -61,16 +63,6 @@ public class DbClient : NetService
     /// The average duration of all transactions, in milliseconds.
     /// </summary>
     public float AverageDuration => (longestDiff + shortestDiff) / 2f;
-
-    /// <summary>
-    /// Determines whether the specified service collection allows a new service to be added.
-    /// </summary>
-    /// <param name="collection">The service collection to check.</param>
-    /// <returns>
-    /// True if the service can be added to the collection; otherwise, false.
-    /// </returns>
-    public override bool CanBeAdded(IServiceCollection collection)
-        => collection is NetClient;
 
     /// <summary>
     /// Clears all tables within the database.
@@ -541,11 +533,14 @@ public class DbClient : NetService
     {
         base.Start();
 
+        if (!Connection.IsClient)
+            throw new InvalidOperationException("Cannot start a database client on a server!");
+        
         transId = 0;
         longestDiff = 0;
-        shortestDiff = 0;       
-        
-        config = Collection.GetService<DbConfig>();
+        shortestDiff = 0;
+
+        config = Connection.Collection.GetService<DbConfig>();
         config.Password ??= string.Empty;
 
         IsAuthenticated = false;
