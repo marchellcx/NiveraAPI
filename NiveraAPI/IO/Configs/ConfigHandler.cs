@@ -93,6 +93,11 @@ public class ConfigHandler
             field = value;
         }
     }
+    
+    /// <summary>
+    /// Whether debug logs are enabled.
+    /// </summary>
+    public bool DebugLogs { get; set; }
 
     /// <summary>
     /// The list of configuration values managed by the handler.
@@ -306,11 +311,11 @@ public class ConfigHandler
         if (Deserialize == null)
             throw new InvalidOperationException("No deserializer specified.");       
 
-        log.Debug("Loading config file ..");
+        log.DebugIf("Loading config file ..", DebugLogs);
         
         if (!File.Exists(FilePath))
         {
-            log.Debug("File does not exist, saving ..");
+            log.DebugIf("File does not exist, saving ..", DebugLogs);
             
             Save();
         }
@@ -320,7 +325,7 @@ public class ConfigHandler
 
             if (lines.Count(x => !string.IsNullOrWhiteSpace(x)) < 1)
             {
-                log.Debug("File is empty, saving ..");
+                log.DebugIf("File is empty, saving ..", DebugLogs);
                 
                 Save();
             }
@@ -328,13 +333,13 @@ public class ConfigHandler
             {
                 var configs = ConfigReader.ReadConfigs(lines);
                 
-                log.Debug($"Loaded &1{configs.Count}&r config keys, setting values ..");
+                log.DebugIf($"Loaded &1{configs.Count}&r config keys, setting values ..", DebugLogs);
 
                 foreach (var kvp in configs)
                 {
                     try
                     {
-                        log.Debug($"Processing config value &1{kvp.Key}&r");
+                        log.DebugIf($"Processing config value &1{kvp.Key}&r", DebugLogs);
                         
                         string key = string.Empty;
                         string? section = null;
@@ -368,7 +373,7 @@ public class ConfigHandler
 
                         value.SetValue(null, obj);
                         
-                        log.Debug($"Set &1{key}&r (&6{value.Member}&r)");
+                        log.DebugIf($"Set &1{key}&r (&6{value.Member}&r)", DebugLogs);
                     }
                     catch (Exception ex)
                     {

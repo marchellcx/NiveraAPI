@@ -2,7 +2,8 @@
 using System.Net.Sockets;
 
 using NiveraAPI.IO.Network.API.Internal;
-
+using NiveraAPI.IO.Network.API.Internal.Tcp;
+using NiveraAPI.IO.Network.API.Internal.Udp;
 using NiveraAPI.Logs;
 using NiveraAPI.Services;
 using NiveraAPI.Utilities;
@@ -28,23 +29,36 @@ namespace NiveraAPI.IO.Network;
 /// </remarks>
 public class NetClient : ServiceCollection
 {
-    internal volatile bool gotData = false;
-    internal volatile bool debugLogs;
-
-    private volatile bool requireData;
-    private volatile int recvThreads = 8;
-
-    private volatile Socket socket;
-    private volatile IPEndPoint current;
+    #region UDP fields
+    private volatile bool udpConnecting;
+    private volatile bool udpConnected;
+    private volatile bool udpRequireData;
+    internal volatile bool udpGotData = false;
+    private volatile int udpRecvThreads = 8;
     
-    private volatile CancellationTokenSource sendCts;
-    private volatile CancellationTokenSource connectCts;
+    private volatile Socket udpSocket;
+    private volatile IPEndPoint udpCurrent;
+    
+    private volatile UdpClientRecvPipe udpRecvPipe;
+    private volatile UdpClientSendPipe udpSendPipe;
+    
+    private volatile CancellationTokenSource udpSendCts;
+    private volatile CancellationTokenSource udpConnectCts;
+    #endregion
+    
+    #region TCP fields
+    private volatile bool tcpConnecting;
+    private volatile bool tcpConnected;
 
-    private volatile ClientRecvPipe recvPipe;
-    private volatile ClientSendPipe sendPipe;
-
-    private volatile bool connecting;
-    private volatile bool connected;
+    private volatile IPEndPoint tcpCurrent;
+    
+    private volatile TcpClient tcpClient;
+    private volatile TcpClientSendPipe tcpSendPipe;
+    private volatile TcpClientRecvPipe tcpRecvPipe;
+    #endregion
+    
+    internal volatile bool debugLogs;
+    internal volatile bool isUdpMode;
 
     private volatile LogSink log = LogManager.GetSource("IO", "NetClient");
 
@@ -61,25 +75,24 @@ public class NetClient : ServiceCollection
     public event Action? Disconnected;
 
     /// <summary>
-    /// Gets or sets the number of threads used by the receive pipeline in the network client.
+    /// Gets or sets the number of threads used for handling UDP packet reception.
+    /// This property determines the concurrency level when processing incoming UDP data,
+    /// with higher values potentially improving throughput under heavy load.
     /// </summary>
-    /// <remarks>
-    /// This property determines how many threads will be allocated to handle data received from the network.
-    /// Adjusting this value can impact the concurrency and performance of message processing.
-    /// </remarks>
-    public int ReceiveThreads
+    public int UdpReceiveThreads
     {
-        get => recvThreads;
-        set => recvThreads = value;
+        get => udpRecvThreads;
+        set => udpRecvThreads = value;
     }
 
     /// <summary>
-    /// Gets or sets a value indicating whether the client requires data from the remote server before establishing a connection.
+    /// Determines whether the client requires receiving data packets through the UDP protocol
+    /// before considering the connection successfully initialized.
     /// </summary>
-    public bool RequireData
+    public bool UdpRequireData
     {
-        get => requireData;
-        set => requireData = value;
+        get => udpRequireData;
+        set => udpRequireData = value;
     }
 
     /// <summary>
@@ -97,44 +110,38 @@ public class NetClient : ServiceCollection
     public LogSink Log => log;
     
     /// <summary>
-    /// Gets the send pipeline associated with the network client.
+    /// Gets or sets the maximum number of retransmissions allowed for a message that does not have a handler assigned until it is discarded.
     /// </summary>
-    public ClientSendPipe SendPipe => sendPipe;
-
+    public int MaxRetransmissions { get; set; }
+    
     /// <summary>
-    /// Gets the receive pipeline associated with the network client.
+    /// Whether the client is currently using UDP for communication.
     /// </summary>
-    public ClientRecvPipe RecvPipe => recvPipe;
+    public bool IsUsingUdp => isUdpMode;
 
     /// <summary>
     /// Whether the client is currently attempting to connect to a remote server.
     /// </summary>
-    public bool IsConnecting => connecting;
+    public bool IsConnecting => isUdpMode ? udpConnecting : tcpConnecting;
     
     /// <summary>
     /// Whether the client is currently connected to a remote server.
     /// </summary>
-    public bool IsConnected => connected;
-    
+    public bool IsConnected => isUdpMode ? udpConnected : tcpConnected;
+
     /// <summary>
     /// Gets the total number of bytes sent by the network client's send pipeline.
     /// </summary>
-    public long SentBytes => sendPipe.SentBytes;
+    public long SentBytes => isUdpMode ? udpSendPipe.SentBytes : tcpSendPipe.sentBytes;
 
     /// <summary>
     /// Gets the total number of bytes received by the client through the network pipeline.
     /// </summary>
-    public long ReceivedBytes => recvPipe.ReceivedBytes;
+    public long ReceivedBytes => isUdpMode ? udpRecvPipe.ReceivedBytes : tcpRecvPipe.receivedBytes;
     
     /// <summary>
     /// Gets the network connection associated with the client.
     /// </summary>
-    /// <remarks>
-    /// This property represents the active network connection managed by the client.
-    /// It provides access to the underlying <c>NetConnection</c> instance,
-    /// allowing interaction with the established connection. The property is read-only
-    /// and will be set internally when a connection is successfully established.
-    /// </remarks>
     public NetConnection? Connection { get; private set; }
 
     /// <summary>
@@ -143,10 +150,221 @@ public class NetClient : ServiceCollection
     public List<Type> Services { get; } = new();
 
     /// <summary>
-    /// Updates the internal action queue by processing and executing queued actions.
-    /// Invokes the <see cref="ActionQueue.UpdateQueue"/> method to handle the queued actions.
+    /// Updates the state of the client by processing necessary network operations
+    /// for either UDP or TCP based on the current mode.
     /// </summary>
     public void Update()
+    {
+        if (isUdpMode)
+        {
+            UdpUpdate();
+        }
+        else
+        {
+            TcpUpdate();
+        }
+    }
+
+    /// <summary>
+    /// Establishes a connection to the specified endpoint using either TCP or UDP based on the provided parameter.
+    /// </summary>
+    /// <param name="target">The endpoint to which the connection will be established.</param>
+    /// <param name="useUdp">Indicates whether to use UDP (true) or TCP (false) for the connection.</param>
+    public void Connect(IPEndPoint target, bool useUdp)
+    {
+        isUdpMode = useUdp;
+
+        if (isUdpMode)
+        {
+            UdpConnect(target);
+        }
+        else
+        {
+            TcpConnect(target);
+        }
+    }
+
+    /// <summary>
+    /// Disconnects the client socket if a connection is currently established.
+    /// Ensures that the socket is safely disconnected and logs any errors
+    /// encountered during the disconnection process.
+    /// </summary>
+    public void Disconnect()
+    {
+        if (isUdpMode)
+        {
+            UdpDisconnect();
+        }
+        else
+        {
+            TcpDisconnect();
+        }
+    }
+
+    /// <inheritdoc />
+    public override void Stop()
+    {
+        base.Stop();
+
+        if (isUdpMode)
+        {
+            UdpStop();
+        }
+        else
+        {
+            TcpStop();
+        }
+    }
+
+    #region TCP Networking
+    private void TcpStop()
+    {
+        log.DebugIf("Stopping client ..", debugLogs);
+        
+        Disconnect();
+        
+        queue.ClearQueue();
+    }
+
+    private void TcpConnect(IPEndPoint target)
+    {
+        if (tcpClient != null)
+            Disconnect();
+        
+        tcpCurrent = target;
+
+        tcpClient = new();
+            
+        tcpClient.SendBufferSize = NetSettings.MTU;
+        tcpClient.ReceiveBufferSize = NetSettings.MTU;
+
+        tcpConnected = false;
+        tcpConnecting = true;
+            
+        Task.Run(async () =>
+        {
+            while (true)
+            {
+                try
+                {
+                    log.DebugIf($"Connecting to &1{target}&r ..", debugLogs);
+                        
+                    await Task.Delay(1000);
+                    await tcpClient.ConnectAsync(target.Address, target.Port);
+                        
+                    tcpConnected = true;
+                    tcpConnecting = false;
+                        
+                    log.DebugIf("Connected!", debugLogs);
+
+                    queue.AddToQueue(TcpOnConnected);
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    log.Error($"Error while connecting:\n{ex}");
+                }
+            }
+        });
+    }
+
+    private void TcpDisconnect()
+    {
+        try
+        {
+            log.DebugIf("Disconnecting ..", debugLogs);
+
+            tcpConnected = false;
+            tcpConnecting = false;
+            
+            if (Connection != null)
+            {
+                Disconnected?.Invoke();
+
+                RemoveService(typeof(NetConnection));
+                
+                Connection = null;
+            }
+
+            try
+            {
+                if (tcpClient is { Connected: true })
+                    tcpClient.Close();
+                
+                tcpClient.Dispose();
+                tcpClient = null!;
+            }
+            catch
+            {
+                // ignored
+            }
+            
+            tcpRecvPipe?.Stop();
+            tcpRecvPipe = null!;
+            
+            tcpSendPipe?.Stop();
+            tcpSendPipe = null!;
+            
+            StopAllServices();
+        }
+        catch (Exception ex)
+        {
+            log.Error($"Could not disconnect!\n{ex}");
+        }
+    }
+
+    private void TcpOnConnected()
+    {
+        log.DebugIf("Setting up local connection ..", debugLogs);
+        
+        tcpRecvPipe = new(tcpClient, this);
+        tcpRecvPipe.Start();
+        
+        log.DebugIf("TcpRecvPipe started", debugLogs);
+
+        tcpSendPipe = new(tcpClient, this);
+        tcpSendPipe.Start();
+        
+        log.DebugIf("TcpSendPipe started", debugLogs);
+
+        Connection = new(this, tcpCurrent, tcpClient, 0);
+
+        AddService(Connection);
+        
+        log.DebugIf("Connection started", debugLogs);
+        
+        Services.ForEach(t => Connection.AddService(t, []));
+
+        log.DebugIf("Services added", debugLogs);
+        
+        ThreadPool.QueueUserWorkItem(_ => TcpInternalUpdate());
+        
+        log.DebugIf("Update thread started", debugLogs);
+        
+        Connected?.Invoke();
+    }
+
+    internal void TcpOnSendPipeError(Exception ex)
+    {
+        log.Error($"TcpSendPipe received an error: &1{ex.Message}&r, disconnecting client!");
+        
+        if (ex != null)
+            log.Error(ex);
+        
+        Disconnect();
+    }
+
+    internal void TcpOnReceivePipeError(Exception ex)
+    {
+        log.Error($"TcpRecvPipe received an error: &1{ex.Message}&r, disconnecting client!");
+        
+        if (ex != null)
+            log.Error(ex);
+        
+        Disconnect();
+    }
+
+    private void TcpUpdate()
     {
         try
         {
@@ -154,18 +372,18 @@ public class NetClient : ServiceCollection
 
             if (Connection != null)
             {
-                while (recvPipe.TryGrab(out var data))
+                while (tcpRecvPipe.TryGrab(out var data))
                 {
-                    log.DebugIf($"Processing received data: {data.Reader.Count} bytes", debugLogs);
+                    log.DebugIf($"Processing received data: {data.Count} bytes", debugLogs);
                     
                     try
                     {
-                        Connection.Receive(data.Reader); // in theory this should never throw because it's wrapped in a try-catch
-                                                         // block itself but just in case
+                        Connection.Receive(data); // in theory this should never throw because it's wrapped in a try-catch
+                                                  // block itself but just in case
                     }
                     finally
                     {
-                        recvPipe.Return(data);
+                        tcpRecvPipe.Return(data);
                     }
                 }
                 
@@ -177,62 +395,85 @@ public class NetClient : ServiceCollection
             log.Error($"Failed to process action queue:\n{ex}");
         }
     }
+    
+    private void TcpInternalUpdate()
+    {
+        while (tcpClient != null)
+        {
+            Thread.Sleep(1);
+            
+            try
+            {
+                if (Connection is { HasData: true })
+                {
+                    log.DebugIf($"There is data available to send", debugLogs);
+                    
+                    var writer = tcpSendPipe.GetWriter();
 
-    /// <summary>
-    /// Initiates a connection to a remote server using the specified target endpoint.
-    /// </summary>
-    /// <param name="target">The <see cref="IPEndPoint"/> of the remote server to connect to.</param>
-    /// <exception cref="Exception">Thrown when a connection attempt is already in progress.</exception>
-    public void Connect(IPEndPoint target)
+                    if (Connection.TryWrite(writer))
+                        tcpSendPipe.Send(writer);
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Error while updating connection send:\n{ex}");
+            }
+        }
+        
+        log.DebugIf($"Update thread exited", debugLogs);
+    }
+    #endregion
+    
+    #region UDP Networking
+    private void UdpConnect(IPEndPoint target)
     {
         if (target == null)
             throw new ArgumentNullException(nameof(target));
 
-        if (connecting)
+        if (udpConnecting)
             throw new Exception("The client is already attempting to connect ..");
 
-        connecting = true;
-        connectCts = new CancellationTokenSource();
+        udpConnecting = true;
+        udpConnectCts = new CancellationTokenSource();
 
         ThreadPool.QueueUserWorkItem(_ =>
         {
             log.DebugIf("Connecting thread started", debugLogs);
             
-            while (!connected)
+            while (!udpConnected)
             {
                 try
                 {
-                    gotData = false;
+                    udpGotData = false;
                     
-                    socket?.Dispose();
+                    udpSocket?.Dispose();
                     
                     log.DebugIf($"Connecting to {target} ..", debugLogs);
 
-                    socket = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-                    socket.Blocking = false;
+                    udpSocket = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                    udpSocket.Blocking = false;
 
-                    socket.SendBufferSize = NetSettings.MTU;
-                    socket.ReceiveBufferSize = NetSettings.MTU;
+                    udpSocket.SendBufferSize = NetSettings.MTU;
+                    udpSocket.ReceiveBufferSize = NetSettings.MTU;
                     
-                    socket.Connect(target);
+                    udpSocket.Connect(target);
 
-                    if (requireData)
+                    if (udpRequireData)
                     {
-                        socket.Send(new byte[] { 0x1 }, SocketFlags.None);
+                        udpRecvPipe = new(this, udpSocket);
+                        udpRecvPipe.Start();
+                        
+                        udpSocket.Send(new byte[] { 0x1 }, SocketFlags.None);
 
-                        recvPipe = new(this, socket);
-                        recvPipe.Start();
-
-                        while (!gotData)
+                        while (!udpGotData)
                             continue;
                     }
 
-                    connected = true;
-                    connecting = false;
+                    udpConnected = true;
+                    udpConnecting = false;
+                    udpCurrent = target;
 
-                    current = target;
-
-                    queue.AddToQueue(OnConnected);
+                    queue.AddToQueue(UdpOnConnected);
                     
                     log.DebugIf("Connected!", debugLogs);
                 }
@@ -243,24 +484,19 @@ public class NetClient : ServiceCollection
             }
         });
     }
-
-    /// <summary>
-    /// Disconnects the client socket if a connection is currently established.
-    /// Ensures that the socket is safely disconnected and logs any errors
-    /// encountered during the disconnection process.
-    /// </summary>
-    public void Disconnect()
+    
+    private void UdpDisconnect()
     {
         try
         {
-            gotData = false;
+            udpGotData = false;
             
             log.DebugIf("Disconnecting ..", debugLogs);
 
             try
             {
-                if (sendCts is { IsCancellationRequested: false })
-                    sendCts.Cancel();
+                if (udpSendCts is { IsCancellationRequested: false })
+                    udpSendCts.Cancel();
             }
             catch
             {
@@ -269,8 +505,8 @@ public class NetClient : ServiceCollection
 
             try
             {
-                if (connectCts is { IsCancellationRequested: false })
-                    connectCts.Cancel();
+                if (udpConnectCts is { IsCancellationRequested: false })
+                    udpConnectCts.Cancel();
             }
             catch
             {
@@ -279,8 +515,8 @@ public class NetClient : ServiceCollection
 
             try
             {
-                if (socket is { Connected: true })
-                    socket.Disconnect(false);
+                if (udpSocket is { Connected: true })
+                    udpSocket.Disconnect(false);
             }
             catch
             {
@@ -302,32 +538,29 @@ public class NetClient : ServiceCollection
         }
     }
 
-    /// <inheritdoc />
-    public override void Stop()
+    private void UdpStop()
     {
-        base.Stop();
-        
         log.DebugIf("Stopping client ..", debugLogs);
         
         Disconnect();
         
-        sendPipe.Stop();
-        sendPipe = null!;
+        udpSendPipe.Stop();
+        udpSendPipe = null!;
         
-        recvPipe.Stop();
-        recvPipe = null!;
+        udpRecvPipe.Stop();
+        udpRecvPipe = null!;
 
-        connected = false;
-        connecting = false;
+        udpConnected = false;
+        udpConnecting = false;
         
         queue.ClearQueue();
 
         try
         {
-            if (socket != null)
+            if (udpSocket != null)
             {
-                socket.Close();
-                socket.Dispose();
+                udpSocket.Close();
+                udpSocket.Dispose();
             }
         }
         catch
@@ -335,26 +568,58 @@ public class NetClient : ServiceCollection
             // ignore
         }
 
-        socket = null!;
+        udpSocket = null!;
     }
 
-    private void OnConnected()
+    private void UdpUpdate()
+    {
+        try
+        {
+            queue.UpdateQueue();
+
+            if (Connection != null)
+            {
+                while (udpRecvPipe.TryGrab(out var data))
+                {
+                    log.DebugIf($"Processing received data: {data.Reader.Count} bytes", debugLogs);
+                    
+                    try
+                    {
+                        Connection.Receive(data.Reader); // in theory this should never throw because it's wrapped in a try-catch
+                                                         // block itself but just in case
+                    }
+                    finally
+                    {
+                        udpRecvPipe.Return(data);
+                    }
+                }
+                
+                Connection.Update();
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Error($"Failed to process action queue:\n{ex}");
+        }
+    }
+
+    private void UdpOnConnected()
     {
         log.DebugIf("Setting up local connection ..", debugLogs);
 
-        if (!requireData)
+        if (!udpRequireData)
         {
-            recvPipe = new(this, socket);
-            recvPipe.Start();
+            udpRecvPipe = new(this, udpSocket);
+            udpRecvPipe.Start();
             
             log.DebugIf("RecvPipe started", debugLogs);
         }
 
-        sendPipe = new(this, socket);
+        udpSendPipe = new(this, udpSocket);
         
         log.DebugIf("SendPipe started", debugLogs);
         
-        Connection = new(this, socket, current, 0);
+        Connection = new(this, udpSocket, udpCurrent, 0);
 
         AddService(Connection);
         
@@ -364,16 +629,16 @@ public class NetClient : ServiceCollection
 
         log.DebugIf("Services added", debugLogs);
         
-        sendCts = new();
+        udpSendCts = new();
         
-        ThreadPool.QueueUserWorkItem(_ => InternalUpdate());
+        ThreadPool.QueueUserWorkItem(_ => UdpInternalUpdate());
         
         log.DebugIf("Update thread started", debugLogs);
         
         Connected?.Invoke();
     }
 
-    internal void OnSendPipeError(SocketError error, Exception ex)
+    internal void UdpOnSendPipeError(SocketError error, Exception ex)
     {
         log.Error($"SendPipe received an error: &1{error}&r, stopping client!");
         
@@ -383,7 +648,7 @@ public class NetClient : ServiceCollection
         Stop();
     }
 
-    internal void OnReceivePipeError(SocketError error, Exception ex)
+    internal void UdpOnReceivePipeError(SocketError error, Exception ex)
     {
         log.Error($"RecvPipe received an error: &1{error}&r, stopping client!");
         
@@ -393,9 +658,9 @@ public class NetClient : ServiceCollection
         Stop();
     }
 
-    private void InternalUpdate()
+    private void UdpInternalUpdate()
     {
-        while (!sendCts.IsCancellationRequested)
+        while (!udpSendCts.IsCancellationRequested)
         {
             Thread.Sleep(1);
             
@@ -403,11 +668,11 @@ public class NetClient : ServiceCollection
             {
                 if (Connection is { HasData: true })
                 {
-                    var writer = sendPipe.GetWriter();
+                    var writer = udpSendPipe.GetWriter();
 
                     if (Connection.TryWrite(writer))
                     {
-                        sendPipe.Send(writer);
+                        udpSendPipe.Send(writer);
                     }
                 }
             }
@@ -417,4 +682,5 @@ public class NetClient : ServiceCollection
             }
         }
     }
+    #endregion
 }

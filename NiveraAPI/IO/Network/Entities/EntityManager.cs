@@ -168,6 +168,11 @@ public class EntityManager : NetService
     private List<Entity> entities = new();
 
     /// <summary>
+    /// Whether or not to log debug messages.
+    /// </summary>
+    public bool DebugLogs { get; set; }
+    
+    /// <summary>
     /// Gets the time elapsed in the local timer since the last update, in seconds.
     /// </summary>
     public float LocalTime { get; private set; } = 0f;
@@ -398,7 +403,7 @@ public class EntityManager : NetService
             return false;       
         }
 
-        Log.Debug($"Destroying entity &1{entity.Id}&r");
+        Log.DebugIf($"Destroying entity &1{entity.Id}&r", DebugLogs);
 
         entities.Remove(entity);
         entity.destroyed = true;
@@ -412,7 +417,7 @@ public class EntityManager : NetService
             Log.Error($"Could not destroy entity &1{entity.Id}&r:\n{ex}");
         }
         
-        Log.Debug($"Entity &1{entity.Id}&r destroyed, sending message to client ..");
+        Log.DebugIf($"Entity &1{entity.Id}&r destroyed, sending message to client ..", DebugLogs);
 
         Send(new EntityDestroyMessage(entity.Id));
         return true;
@@ -648,7 +653,7 @@ public class EntityManager : NetService
             return;
         }
         
-        Log.Debug($"Received entity destroy message for entity &1{entity.Id}&r");
+        Log.DebugIf($"Received entity destroy message for entity &1{entity.Id}&r", DebugLogs);
 
         try
         {
@@ -713,7 +718,7 @@ public class EntityManager : NetService
             return;
         }
         
-        Log.Debug($"Found constructor: &1{msg.Type}&r, spawning entity ..");
+        Log.DebugIf($"Found constructor: &1{msg.Type}&r, spawning entity ..", DebugLogs);
 
         try
         {

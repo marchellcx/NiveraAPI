@@ -19,6 +19,11 @@ public abstract class ParameterParser
     private static volatile LogSink log = LogManager.GetSource("Parsing", "Parameters");
     
     /// <summary>
+    /// Whether or not to show debug logs.
+    /// </summary>
+    public static bool DebugLogs;
+    
+    /// <summary>
     /// Gets a collection of all registered <see cref="ParameterParser"/> instances.
     /// </summary>
     public static List<ParameterParser> AllParsers = new();
@@ -324,23 +329,23 @@ public abstract class ParameterParser
         if (parameters == null)
             throw new ArgumentNullException(nameof(parameters));
         
-        log.Debug($"Parsing {tokens.Count} tokens into {parameters.Count} parameters.");
+        log.DebugIf($"Parsing {tokens.Count} tokens into {parameters.Count} parameters.", DebugLogs);
         
         for (var i = 0; i < tokens.Count; i++)
-            log.Debug($"Token &3{i}&r: {tokens[i]?.GetType().Name ?? "null"} :: {tokens[i]?.ToString() ?? "null"}");
+            log.DebugIf($"Token &3{i}&r: {tokens[i]?.GetType().Name ?? "null"} :: {tokens[i]?.ToString() ?? "null"}", DebugLogs);
         
         for (var i = 0; i < parameters.Count; i++)
-            log.Debug($"Parameter &3{i}&r: {parameters[i].Index} {parameters[i].Type?.Name ?? "null"}");
+            log.DebugIf($"Parameter &3{i}&r: {parameters[i].Index} {parameters[i].Type?.Name ?? "null"}", DebugLogs);
 
         if (tokens.Count == 0)
         {
-            log.Debug("No tokens to parse.");
+            log.DebugIf("No tokens to parse.", DebugLogs);
             return new(ParserError.NoTokens, tokens, null, parameters);
         }
 
         if (parameters.Count(x => x.IsOptional) > tokens.Count)
         {
-            log.Debug($"Insufficient tokens for {parameters.Count} parameters with {tokens.Count} available.");
+            log.DebugIf($"Insufficient tokens for {parameters.Count} parameters with {tokens.Count} available.", DebugLogs);
             return new(ParserError.InsufficientTokens, tokens, null, parameters);
         }
 
@@ -362,8 +367,8 @@ public abstract class ParameterParser
             {
                 ParameterResult? result = default;
                 
-                log.Debug($"Parsing token at index {tokenIndex.CurrentIndex}.");
-                log.Debug($"Current parameter: {parameterIndex.CurrentIndex} {parameterIndex.Current.Type?.Name ?? "null"}");
+                log.DebugIf($"Parsing token at index {tokenIndex.CurrentIndex}.", DebugLogs);
+                log.DebugIf($"Current parameter: {parameterIndex.CurrentIndex} {parameterIndex.Current.Type?.Name ?? "null"}", DebugLogs);
 
                 try
                 {
@@ -371,27 +376,27 @@ public abstract class ParameterParser
                         && (parameterIndex.Current.OtherParsers == null ||
                             parameterIndex.Current.OtherParsers.Count == 0))
                     {
-                        log.Debug("Parameter has no parsers available");
+                        log.DebugIf("Parameter has no parsers available", DebugLogs);
                         
                         if (tokenIndex.Current is IParsableToken parsableToken)
                         {
-                            log.Debug("Token is IParsableToken");
+                            log.DebugIf("Token is IParsableToken", DebugLogs);
                             
                             result = parsableToken.ParseToken(context);
                         }
                         else if (parameterIndex.Current.Type == typeof(string))
                         {
-                            log.Debug("Parameter type is string");
+                            log.DebugIf("Parameter type is string", DebugLogs);
                             
                             if (tokenIndex.Current is StringToken stringToken)
                             {
-                                log.Debug("Token is StringToken");
+                                log.DebugIf("Token is StringToken", DebugLogs);
                                 
                                 result = context.CreateOkResult(stringToken.Value);
                             }
                             else if (tokenIndex.Current is IStringToken stringConvertableToken)
                             {
-                                log.Debug("Token is IStringToken");
+                                log.DebugIf("Token is IStringToken", DebugLogs);
                                 
                                 result = context.CreateOkResult(stringConvertableToken.ConvertToString());
                             }
@@ -399,13 +404,13 @@ public abstract class ParameterParser
                         else if (tokenIndex.Current is IConvertableToken convertableToken
                                  && convertableToken.TryConvert(parameterIndex.Current.Type, out var convertedValue))
                         {
-                            log.Debug("Token is IConvertableToken");
+                            log.DebugIf("Token is IConvertableToken", DebugLogs);
                             
                             result = context.CreateOkResult(convertedValue);
                         }
                         else
                         {
-                            log.Debug("No parser available for token");
+                            log.DebugIf("No parser available for token", DebugLogs);
                             
                             result = context.CreateResult($"Missing parser at index {parameterIndex.CurrentIndex}.");
                         }
@@ -414,7 +419,7 @@ public abstract class ParameterParser
                     {
                         if (parameterIndex.Current.MainParser != null)
                         {
-                            log.Debug("Parameter has a main parser");
+                            log.DebugIf("Parameter has a main parser", DebugLogs);
                             
                             result = parameterIndex.Current.MainParser.ParseContext(context);
                         }
@@ -423,7 +428,7 @@ public abstract class ParameterParser
                             && parameterIndex.Current.OtherParsers != null
                             && parameterIndex.Current.OtherParsers.Count > 0)
                         {
-                            log.Debug("Trying other parsers for parameter");
+                            log.DebugIf("Trying other parsers for parameter", DebugLogs);
                             
                             ParameterResult? successParser = null;
 
@@ -488,32 +493,32 @@ public abstract class ParameterParser
                 context.Parameters = parameterIndex = parameterIndex.MoveNext();
                 context.Results = resultsIndex = resultsIndex.AddAndMoveNext(result.Value);
                 
-                log.Debug($"Parsed token: {result.Value is { IsValid: true, Exception: null, Result: not null }}");
+                log.DebugIf($"Parsed token: {result.Value is { IsValid: true, Exception: null, Result: not null }}", DebugLogs);
             }
 
-            log.Debug("Filling in missing parameters with default values.");
+            log.DebugIf("Filling in missing parameters with default values.", DebugLogs);
             
             while (!parameterIndex.IsOutOfRange)
             {
-                log.Debug($"Filling in missing parameter at index {parameterIndex.CurrentIndex}.");
+                log.DebugIf($"Filling in missing parameter at index {parameterIndex.CurrentIndex}.", DebugLogs);
                 
                 if (!parameterIndex.Current.IsOptional)
                 {
-                    log.Debug("Parameter is not optional");
+                    log.DebugIf("Parameter is not optional", DebugLogs);
                     
                     context.Results = resultsIndex = resultsIndex.AddAndMoveNext(context.CreateResult(
                         $"Missing token for parameter at {parameterIndex.CurrentIndex}."));
                 }
                 else
                 {
-                    log.Debug("Parameter is optional, using default value");
+                    log.DebugIf("Parameter is optional, using default value", DebugLogs);
                     
                     context.Results = resultsIndex = resultsIndex.AddAndMoveNext(context.CreateOkResult(parameterIndex.Current.DefaultValue));
                 }
 
                 context.Parameters = parameterIndex = parameterIndex.MoveNext();
                 
-                log.Debug($"Moved to parameter index {parameterIndex.CurrentIndex}");
+                log.DebugIf($"Moved to parameter index {parameterIndex.CurrentIndex}", DebugLogs);
             }
         }
         catch (Exception ex)
@@ -524,7 +529,7 @@ public abstract class ParameterParser
             return new(ParserError.Other, tokens, null, parameters);
         }
 
-        log.Debug("Parsing complete.");
+        log.DebugIf("Parsing complete.", DebugLogs);
         return new(null, tokens, results, parameters);
     }
     

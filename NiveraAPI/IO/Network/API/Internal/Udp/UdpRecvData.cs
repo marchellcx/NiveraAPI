@@ -1,40 +1,43 @@
+using System.Net;
 using System.Net.Sockets;
-
 using NiveraAPI.IO.Serialization;
 
-namespace NiveraAPI.IO.Network.API.Internal;
+namespace NiveraAPI.IO.Network.API.Internal.Udp;
 
 /// <summary>
-/// Represents the data to be sent to a client through a single send thread.
+/// Represents the data received by a client through a single receive thread.
 /// </summary>
-public class SendData
+public class UdpRecvData
 {
     /// <summary>
     /// The buffer containing the received data.
     /// </summary>
     public volatile byte[] Buffer;
-    
+        
     /// <summary>
-    /// The writer used to write data to the buffer.
+    /// The reader used to access the data in the buffer.
     /// </summary>
-    public volatile ByteWriter Writer;
+    public volatile ByteReader Reader;
 
     /// <summary>
     /// The socket asynchronous event arguments used for receiving data.
     /// </summary>
     public volatile SocketAsyncEventArgs Args;
-
+    
     /// <summary>
-    /// Initializes a new instance of the <see cref="SendData"/> class.
+    /// Initializes a new instance of the <see cref="UdpRecvData"/> class.
     /// </summary>
-    public SendData()
+    public UdpRecvData(bool isServer)
     {
         Buffer = new byte[NetSettings.MTU];
 
-        Writer = ByteWriter.Get();
-        Writer.Buffer = Buffer;
+        Reader = new();
+        Reader.Buffer = Buffer;
 
         Args = new() { UserToken = this };
         Args.SetBuffer(Buffer, 0, Buffer.Length);
+
+        if (isServer)
+            Args.RemoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
     }
 }

@@ -15,7 +15,7 @@ namespace NiveraAPI.Rest.Steam;
 public class SteamAuthRoute : RestRoute
 {
     private const string claimedIdPrefix = "claimed_id=https://steamcommunity.com/openid/id/";
-    private static LogSink log = LogManager.GetSource("HTTP", "STEAM_AUTH");
+    private static LogSink log = LogManager.GetSource("Rest", "SteamAuth");
 
     private SteamAuthManager manager;
     
@@ -40,7 +40,25 @@ public class SteamAuthRoute : RestRoute
     /// The HTTP methods supported by the route.
     /// </summary>
     public override HttpMethod[] Methods { get; }
-    
+
+    /// <summary>
+    /// Determines whether the specified URLs match the criteria defined by the route.
+    /// </summary>
+    /// <param name="rawUrl">The raw URL of the incoming request.</param>
+    /// <param name="parsedUrl">The pre-processed or parsed version of the URL.</param>
+    /// <returns>True if the URLs match the criteria defined by the route; otherwise, false.</returns>
+    public override bool IsMatch(string rawUrl, string parsedUrl)
+    {
+        if (base.IsMatch(rawUrl, parsedUrl))
+            return true;
+        
+        var start = string.Concat(manager.CallbackRoute, "?session=");
+        var prefixedStart = string.Concat(manager.server.Prefix, manager.CallbackRoute, "?session=");
+        
+        return rawUrl.StartsWith(start) || parsedUrl.StartsWith(start)
+            || rawUrl.StartsWith(prefixedStart) || parsedUrl.StartsWith(prefixedStart);
+    }
+
     // Kinda bullshit way of handling it but Steam has not changed this in a hundred years so it should be fine
     
     /// <summary>

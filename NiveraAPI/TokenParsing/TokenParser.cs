@@ -15,6 +15,11 @@ public abstract class TokenParser
     private static LogSink log = LogManager.GetSource("Parsing", "Tokens");
     
     /// <summary>
+    /// Whether or not to show debug logs.
+    /// </summary>
+    public static bool DebugLogs { get; set; }
+    
+    /// <summary>
     /// A static property that holds a collection of all available token parsers.
     /// This collection is used as the default set of parsers when none are explicitly provided
     /// during the parsing operation.
@@ -47,14 +52,14 @@ public abstract class TokenParser
         if (tokens is null)
             throw new ArgumentNullException(nameof(tokens));
         
-        log.Debug($"Parsing tokens from input: &1{input}&r | {tokens.Count} tokens found. | Parsers: {parsers?.Count ?? 0}");
+        log.DebugIf($"Parsing tokens from input: &1{input}&r | {tokens.Count} tokens found. | Parsers: {parsers?.Count ?? 0}", DebugLogs);
         
         parsers ??= Parsers;
         
         if (parsers.Count < 1)
             throw new ArgumentException("At least one parser must be provided.", nameof(parsers));
         
-        log.Debug($"Using {parsers.Count} parsers for tokenization.");
+        log.DebugIf($"Using {parsers.Count} parsers for tokenization.", DebugLogs);
 
         using (var context = new TokenContext(input, tokens))
         {
@@ -70,14 +75,14 @@ public abstract class TokenParser
                 // Process the currently active parser.
                 if (context.CurrentParser != null)
                 {
-                    log.Debug($"Processing active parser: &1{context.CurrentParser.GetType().Name}&r " +
-                              $"| Current token: &1{context.CurrentToken?.GetType().Name ?? "null"}&r " +
-                              $"| Current char: &1{context.CurrentChar}&r |");
+                    log.DebugIf($"Processing active parser: &1{context.CurrentParser.GetType().Name}&r " +
+                                $"| Current token: &1{context.CurrentToken?.GetType().Name ?? "null"}&r " +
+                                $"| Current char: &1{context.CurrentChar}&r |", DebugLogs);
                     
                     // We likely hit an ending token of a parser, so just skip to the next one.
                     if (context.CurrentParser.ShouldTerminate(context))
                     {
-                        log.Debug("Terminating active parser.");
+                        log.DebugIf("Terminating active parser.", DebugLogs);
                         
                         context.TerminateToken();
                         continue;
@@ -85,42 +90,42 @@ public abstract class TokenParser
 
                     if (!context.CurrentParser.ProcessContext(context))
                     {
-                        log.Debug("Active parser returned false on context");
+                        log.DebugIf("Active parser returned false on context", DebugLogs);
                         continue;
                     }
                 }
 
                 var parserFoundOrPrevented = context.CurrentParser != null;
                 
-                log.Debug("Processing inactive parsers");
+                log.DebugIf("Processing inactive parsers", DebugLogs);
                 
                 // Process other inactive parsers
                 for (var x = 0; x < parsers.Count; x++)
                 {
                     var parser = parsers[x];
                     
-                    log.Debug($"Processing parser: &1{parser.GetType().Name}&r");
+                    log.DebugIf($"Processing parser: &1{parser.GetType().Name}&r", DebugLogs);
                     
                     // Handle the start of new parsers
                     if ((context.CurrentParser == null || context.CurrentParser.AllowStart(context, parser)) 
                         && parser.ShouldStart(context))
                     {
-                        log.Debug($"Starting new parser: &1{parser.GetType().Name}&r.");
+                        log.DebugIf($"Starting new parser: &1{parser.GetType().Name}&r.", DebugLogs);
                         
                         context.TerminateToken();
                         
-                        log.Debug("Converting trailing string to token.");
+                        log.DebugIf("Converting trailing string to token.", DebugLogs);
             
                         if (context.EmptyBuilder.Length > 0)
                         {
-                            log.Debug("Creating string token.");
+                            log.DebugIf("Creating string token.", DebugLogs);
                 
                             var token = StringToken.Instance.NewToken() as StringToken;
 
                             token.Value = context.EmptyBuilder.ToString().Trim(' ');
                             tokens.Add(token);
                 
-                            log.Debug("Token created successfully.");
+                            log.DebugIf("Token created successfully.", DebugLogs);
                 
                             context.EmptyBuilder.Clear();
                         }
@@ -140,7 +145,7 @@ public abstract class TokenParser
                     }
                 }
                 
-                log.Debug("Appending trailing string.");
+                log.DebugIf("Appending trailing string.", DebugLogs);
 
                 // Let's not forget strings not handled by any parser
                 // Mostly useful for commands so users don't have to use quotation marks on the last argument.
@@ -149,14 +154,14 @@ public abstract class TokenParser
                     // Prevents leading whitespace from being added to the token.
                     if (context.EmptyBuilder.Length < 1 && context.IsCurrentWhiteSpace)
                     {
-                        log.Debug("Skipping whitespace.");
+                        log.DebugIf("Skipping whitespace.", DebugLogs);
                         continue;
                     }
                     
                     // Prevents whitespaces at the end.
                     if (context is { IsCurrentWhiteSpace: true, IsEnd: true })
                     {
-                        log.Debug("Skipping trailing whitespace.");
+                        log.DebugIf("Skipping trailing whitespace.", DebugLogs);
                         continue;
                     }
                     
@@ -164,28 +169,28 @@ public abstract class TokenParser
                 }
             }
             
-            log.Debug("Terminating remaining tokens.");
+            log.DebugIf("Terminating remaining tokens.", DebugLogs);
 
             context.TerminateToken();
 
-            log.Debug("Converting trailing string to token.");
+            log.DebugIf("Converting trailing string to token.", DebugLogs);
             
             if (context.EmptyBuilder.Length > 0)
             {
-                log.Debug("Creating string token.");
+                log.DebugIf("Creating string token.", DebugLogs);
                 
                 var token = StringToken.Instance.NewToken() as StringToken;
 
                 token.Value = context.EmptyBuilder.ToString().Trim(' ');
                 tokens.Add(token);
                 
-                log.Debug("Token created successfully.");
+                log.DebugIf("Token created successfully.", DebugLogs);
                 
                 context.EmptyBuilder.Clear();
             }
         }
         
-        log.Debug($"Parsed {tokens.Count} tokens.");
+        log.DebugIf($"Parsed {tokens.Count} tokens.", DebugLogs);
     }
 
     /// <summary>

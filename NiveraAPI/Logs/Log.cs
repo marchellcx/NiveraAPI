@@ -18,7 +18,7 @@ public static class Log
     /// </summary>
     /// <param name="msg">The debug message to be logged. Cannot be null.</param>
     /// <exception cref="ArgumentNullException">Thrown when the <paramref name="msg"/> parameter is null.</exception>
-    public static void Debug(object msg)
+    public static void Debug(object msg, bool enableDebug)
     {
         if (msg == null)
             throw new ArgumentNullException(nameof(msg));
@@ -26,7 +26,7 @@ public static class Log
         var sourceCategory = "UnknownAsm";
         var sourceName = "UnknownMethod";
         
-        var method = ReflectionHelper.GetCallerMethod(0, false,
+        var method = ReflectionHelper.GetCallerMethod(2, false,
             m => m.DeclaringType != null && m.DeclaringType != typeof(Log) &&
                  m.DeclaringType != typeof(ReflectionHelper));
 
@@ -44,11 +44,11 @@ public static class Log
 
         if (method != null)
         {
-            sink.Debug(method.Name, msg);
+            sink.DebugIf(method.Name, msg, enableDebug);
         }
         else
         {
-            sink.Debug(msg);
+            sink.DebugIf(msg, enableDebug);
         }
     }
 

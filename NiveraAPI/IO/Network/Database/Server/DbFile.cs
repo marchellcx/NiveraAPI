@@ -16,6 +16,11 @@ public class DbFile : IDisposable
     /// The directory of the database file.
     /// </summary>
     public string Directory { get; }
+    
+    /// <summary>
+    /// Whether to enable debug logs for the database file.
+    /// </summary>
+    public bool DebugLogs { get; set; }
 
     /// <summary>
     /// The tables contained within the database file.
@@ -116,30 +121,30 @@ public class DbFile : IDisposable
     /// </summary>
     public void ReadAll()
     {
-        log.Debug($"Reading all tables in {Directory}");
+        log.DebugIf($"Reading all tables in {Directory}", DebugLogs);
         
         if (!System.IO.Directory.Exists(Directory))
         {
-            log.Debug($"Directory {Directory} does not exist, creating ...");
+            log.DebugIf($"Directory {Directory} does not exist, creating ...", DebugLogs);
             
             System.IO.Directory.CreateDirectory(Directory);
             return;
         }
         
-        log.Debug($"Clearing existing tables ...");
+        log.DebugIf("Clearing existing tables ...", DebugLogs);
         
         tables.ForEach(kvp => kvp.Value.Dispose());
         tables.Clear();
         
-        log.Debug($"Reading tables ...");
+        log.DebugIf("Reading tables ...", DebugLogs);
 
         foreach (var directory in System.IO.Directory.GetDirectories(Directory, "DB-*"))
         {
-            log.Debug($"Reading table {directory}");
+            log.DebugIf($"Reading table {directory}", DebugLogs);
             
             var table = new DbTable(directory);
             
-            log.Debug($"Table {table.Name} read");
+            log.DebugIf($"Table {table.Name} read", DebugLogs);
 
             try
             {
@@ -159,14 +164,14 @@ public class DbFile : IDisposable
     /// </summary>
     public void SaveAll()
     {
-        log.Debug($"Saving all tables in {Directory}");
+        log.DebugIf($"Saving all tables in {Directory}", DebugLogs);
         
         if (!System.IO.Directory.Exists(Directory))
             System.IO.Directory.CreateDirectory(Directory);
 
         tables.ForEach(kvp => kvp.Value.WriteItems());
         
-        log.Debug($"All tables saved");
+        log.DebugIf("All tables saved", DebugLogs);
     }
     
     /// <summary>Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.</summary>

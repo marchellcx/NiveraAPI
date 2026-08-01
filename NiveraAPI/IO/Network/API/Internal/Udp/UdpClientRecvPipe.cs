@@ -1,31 +1,36 @@
 ﻿using System.Collections.Concurrent;
 using System.Net.Sockets;
 
-namespace NiveraAPI.IO.Network.API.Internal;
+namespace NiveraAPI.IO.Network.API.Internal.Udp;
 
 /// <summary>
 /// Represents a network data receiving pipeline for a client.
 /// Handles the reception, error monitoring, and exception collection
 /// from multiple receive threads associated with a client socket.
 /// </summary>
-public class ClientRecvPipe
+public class UdpClientRecvPipe
 {
+    /// <summary>
+    /// Whether to enable debug logs for the client receive pipe.
+    /// </summary>
+    public static bool DebugLogs { get; set; }
+    
     private volatile Socket sock;
     private volatile NetClient client;
     private volatile CancellationTokenSource cts;
 
-    private volatile ConcurrentQueue<ReceivedData> dataPool = new();
-    private volatile ConcurrentQueue<ReceivedData> dataQueue = new();
+    private volatile ConcurrentQueue<UdpRecvData> dataPool = new();
+    private volatile ConcurrentQueue<UdpRecvData> dataQueue = new();
 
     private long recvBytes;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="ClientRecvPipe"/> class.
+    /// Initializes a new instance of the <see cref="UdpClientRecvPipe"/> class.
     /// </summary>
     /// <param name="client">The client associated with this receive pipe.</param>
     /// <param name="socket">The socket used for receiving data.</param>
     /// <exception cref="ArgumentNullException">Thrown if any of the parameters are null.</exception>
-    public ClientRecvPipe(NetClient client, Socket socket)
+    public UdpClientRecvPipe(NetClient client, Socket socket)
     {
         this.client = client ?? throw new ArgumentNullException(nameof(client));
         this.sock = socket ?? throw new ArgumentNullException(nameof(socket));
@@ -53,7 +58,7 @@ public class ClientRecvPipe
     {
         cts = new();
         
-        for (var x = 0; x < client.ReceiveThreads; x++)
+        for (var x = 0; x < client.UdpReceiveThreads; x++)
             StartThread(x);
     }
 
@@ -70,7 +75,7 @@ public class ClientRecvPipe
     {
         cts.Cancel();
         
-        client.Log.Debug("ClientRecvPipe", "Stopping threads ..");
+        client.Log.DebugIf("UdpClientRecvPipe", "Stopping threads ..", DebugLogs);
 
         while (dataPool.TryDequeue(out var data))
         {
@@ -84,17 +89,17 @@ public class ClientRecvPipe
             data.Reader.ReturnToPool();
         }
         
-        client.Log.Debug("ClientRecvPipe", "Threads stopped, internal queues cleared");
+        client.Log.DebugIf("UdpClientRecvPipe", "Threads stopped, internal queues cleared", DebugLogs);
     }
 
     /// <summary>
-    /// Returns a previously used instance of <see cref="ClientRecvPipe.ReceivedData"/>
+    /// Returns a previously used instance of <see cref="UdpClientRecvPipe.UdpRecvData"/>
     /// back to the internal data pool for reuse. Resets its state to the default values.
     /// </summary>
-    /// <param name="data">The <see cref="ClientRecvPipe.ReceivedData"/> instance to be returned
+    /// <param name="data">The <see cref="UdpClientRecvPipe.UdpRecvData"/> instance to be returned
     /// to the data pool. Must not be null.</param>
     /// <exception cref="ArgumentNullException">Thrown if the <paramref name="data"/> is null.</exception>
-    public void Return(ReceivedData data)
+    public void Return(UdpRecvData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -103,15 +108,15 @@ public class ClientRecvPipe
     }
 
     /// <summary>
-    /// Attempts to retrieve and remove the next available <see cref="ReceivedData"/> object from the data queue.
+    /// Attempts to retrieve and remove the next available <see cref="UdpRecvData"/> object from the data queue.
     /// </summary>
     /// <param name="data">
-    /// When this method returns, contains the <see cref="ReceivedData"/> object removed from the queue, or <c>null</c> if the queue is empty.
+    /// When this method returns, contains the <see cref="UdpRecvData"/> object removed from the queue, or <c>null</c> if the queue is empty.
     /// </param>
     /// <returns>
     /// <c>true</c> if an object was successfully retrieved from the queue; otherwise, <c>false</c>.
     /// </returns>
-    public bool TryGrab(out ReceivedData data)
+    public bool TryGrab(out UdpRecvData data)
         => dataQueue.TryDequeue(out data);
 
     private void StartThread(int index)
@@ -120,14 +125,14 @@ public class ClientRecvPipe
         
         DispatchThread(data.Args);
         
-        client.Log.Debug("ClientRecvPipe", $"Started thread ID {index}");
+        client.Log.DebugIf("UdpClientRecvPipe", $"Started thread ID &3{index}&r", DebugLogs);
     }
 
     private void DispatchThread(SocketAsyncEventArgs args)
     {
         if (cts.IsCancellationRequested)
         {
-            client.Log.Debug("ClientRecvPipe", "Thread was cancelled");
+            client.Log.DebugIf("UdpClientRecvPipe", "Thread was cancelled", DebugLogs);
             return;
         }
 
@@ -146,21 +151,21 @@ public class ClientRecvPipe
             if (!cts.IsCancellationRequested)
                 cts.Cancel();
             
-            client.queue.AddToQueue(() => client.OnReceivePipeError(SocketError.OperationAborted, ex));
+            client.queue.AddToQueue(() => client.UdpOnReceivePipeError(SocketError.OperationAborted, ex));
         }
     }
 
     private void OnCompleted(object _, SocketAsyncEventArgs args)
     {
-        if (args.UserToken is not ReceivedData data)
+        if (args.UserToken is not UdpRecvData data)
         {
-            client.Log.Error("ClientRecvPipe", "OnCompleted received a SocketAsyncEventArgs instance with a null or invalid UserToken");
+            client.Log.Error("UdpClientRecvPipe", "OnCompleted received a SocketAsyncEventArgs instance with a null or invalid UserToken");
             return;
         }
         
         if (cts.IsCancellationRequested)
         {
-            client.Log.Debug("ClientRecvPipe", "Thread was cancelled");
+            client.Log.DebugIf("UdpClientRecvPipe", "Thread was cancelled", DebugLogs);
             return;
         }
 
@@ -169,7 +174,7 @@ public class ClientRecvPipe
             if (!cts.IsCancellationRequested)
             {
                 cts.Cancel();
-                client.queue.AddToQueue(() => client.OnReceivePipeError(args.SocketError, null!));
+                client.queue.AddToQueue(() => client.UdpOnReceivePipeError(args.SocketError, null!));
             }
 
             return;
@@ -177,7 +182,7 @@ public class ClientRecvPipe
         
         if (args.BytesTransferred > 0)
         {
-            client.gotData = true;
+            client.udpGotData = true;
             
             data.Reader.Offset = 0;
             data.Reader.Position = 0;
@@ -188,13 +193,13 @@ public class ClientRecvPipe
 
             Interlocked.Add(ref recvBytes, args.BytesTransferred);
             
-            client.Log.Debug("ClientRecvPipe", $"Received {args.BytesTransferred} bytes ({recvBytes} total)");
+            client.Log.DebugIf("UdpClientRecvPipe", $"Received {args.BytesTransferred} bytes ({recvBytes} total)", DebugLogs);
         }
         
         DispatchThread(args);
     }
 
-    private ReceivedData GetData()
+    private UdpRecvData GetData()
     {
         if (dataPool.TryDequeue(out var data))
             return data;

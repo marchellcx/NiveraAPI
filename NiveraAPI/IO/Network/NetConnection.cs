@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using NiveraAPI.Logs;
 
 using NiveraAPI.IO.Network.API;
-
+using NiveraAPI.IO.Network.API.Internal.Tcp;
 using NiveraAPI.IO.Serialization;
 using NiveraAPI.IO.Serialization.Interfaces;
 
@@ -20,28 +20,34 @@ namespace NiveraAPI.IO.Network;
 public class NetConnection : ServiceCollection
 {
     internal volatile bool debugLogs;
-    
-    private volatile int id;
+    internal volatile int id;
 
     private volatile object msgLock = new();
     private volatile ByteWriter msgWriter = ByteWriter.Get();
     
-    private volatile Socket? socket;
-    private volatile EndPoint endPoint;
-    private volatile IPEndPoint clientEndPoint;
+    internal volatile Socket? socket;
+    internal volatile EndPoint endPoint;
     
+    internal volatile IPEndPoint clientEndPoint;
     internal volatile IPEndPoint serverSendEndPoint;
 
-    private volatile NetServer? server;
-    private volatile NetClient? client;
+    internal volatile NetServer? server;
+    internal volatile NetClient? client;
 
-    private volatile NetPing ping;
-    private volatile NetTime time;
+    internal volatile NetPing ping;
+    internal volatile NetTime time;
 
-    private volatile LogSink log;
+    internal volatile LogSink log;
+
+    internal volatile TcpClient tcpClient;
+    internal volatile TcpServerSendPipe tcpSendPipe;
+    internal volatile TcpServerRecvPipe tcpRecvPipe;
 
     private float netTime = 0f;
 
+    private Queue<ISerializableObject> messages = new();
+    private Queue<RetransmittedMessage> retransmissions = new();
+    
     private List<NetService> netServices = new();
     private Dictionary<Type, Action<ISerializableObject>> messageHandlers = new();
     
@@ -99,6 +105,11 @@ public class NetConnection : ServiceCollection
     public LogSink Log => log;
 
     /// <summary>
+    /// The maximum number of retransmissions allowed for a message.
+    /// </summary>
+    public int MaxRetransmissions => client?.MaxRetransmissions ?? server?.MaxRetransmissions ?? 0;
+
+    /// <summary>
     /// Whether the connection has any data to be sent.
     /// </summary>
     public bool HasData => msgWriter.Position > 0
@@ -152,6 +163,29 @@ public class NetConnection : ServiceCollection
         
         log = LogManager.GetSource("IO", $"NetConnectionClient@{endPoint}");
     }
+    
+    /// <summary>
+    /// Creates a new <see cref="NetConnection"/> instance.
+    /// </summary>
+    /// <param name="client">The client instance associated with the connection.</param>
+    /// <param name="tcpClient">The socket used for communication.</param>
+    /// <param name="endPoint">The end point of the connection.</param>
+    /// <param name="id">The unique identifier for the connection.</param>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="client"/> or <paramref name="tcpClient"/> is null.</exception>
+    public NetConnection(NetClient client, IPEndPoint endPoint, TcpClient tcpClient, int id)
+    {
+        this.id = id;
+        this.tcpClient = tcpClient ?? throw new ArgumentNullException(nameof(tcpClient));
+        this.client = client ?? throw new ArgumentNullException(nameof(client));
+        this.clientEndPoint = endPoint ?? throw new ArgumentNullException(nameof(endPoint));
+
+        debugLogs = client.debugLogs;
+        
+        ping = new();
+        time = new(this);
+        
+        log = LogManager.GetSource("IO", $"NetConnectionClient@{endPoint}");
+    }
 
     /// <inheritdoc />
     public override void Start()
@@ -168,6 +202,8 @@ public class NetConnection : ServiceCollection
     public override void Stop()
     {
         base.Stop();
+        
+        StopAllServices();
         
         netServices.Clear();
         messageHandlers.Clear();
@@ -260,13 +296,13 @@ public class NetConnection : ServiceCollection
     }
 
     /// <summary>
-    /// Sends a serialized message over the network using the specified object.
+    /// Sends the specified serializable object to the connected endpoint.
     /// </summary>
-    /// <param name="obj">The serializable object to be sent. Must have an associated serializer.</param>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="obj"/> is null.</exception>
+    /// <param name="obj">The object implementing <see cref="ISerializableObject"/> to be sent.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="obj"/> is null.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown if the object does not have an associated serializer or if the serializer
-    /// has not been registered.
+    /// Thrown when the serializer associated with the <paramref name="obj"/> is null,
+    /// or when the serializer has not been registered with a valid index.
     /// </exception>
     public void Send(ISerializableObject obj)
     {
@@ -287,15 +323,44 @@ public class NetConnection : ServiceCollection
 
             try
             {
-                msgWriter.CompressUInt64(index);
+                msgWriter.WriteUInt16(index);
 
                 obj.Serializer.Serialize(obj, msgWriter);
+
+                if (msgWriter.Position > ushort.MaxValue)
+                {
+                    msgWriter.Position = position;
+                    
+                    messages.Enqueue(obj);
+                }
             }
             catch (Exception ex)
             {
                 msgWriter.Position = position;
                 
                 log.Error($"Failed to serialize message, rolling back!\n{ex}");
+            }
+
+            if (msgWriter.Position < ushort.MaxValue)
+            {
+                while (messages.Count > 0)
+                {
+                    position = msgWriter.Position;
+                    
+                    var msg = messages.Dequeue();
+                    
+                    msgWriter.WriteUInt16(index);
+
+                    msg.Serializer.Serialize(obj, msgWriter);
+
+                    if (msgWriter.Position > ushort.MaxValue)
+                    {
+                        msgWriter.Position = position;
+                        
+                        messages.Enqueue(msg);
+                        break;
+                    }
+                }
             }
         }
     }
@@ -321,6 +386,28 @@ public class NetConnection : ServiceCollection
             netDelta = curTime - netTime;
         
         netTime = curTime;
+
+        var count = retransmissions.Count;
+        
+        for (var x = 0; x < count; x++)
+        {
+            if (retransmissions.Count < 1)
+                break;
+            
+            var msg = retransmissions.Dequeue();
+
+            if (!Handle(msg.Message))
+            {
+                if (msg.Count + 1 < MaxRetransmissions)
+                {
+                    retransmissions.Enqueue(new(msg.Count + 1, msg.Message));
+                }
+                else
+                {
+                    log.Warn($"Max retransmissions reached for message &1{msg.Message.GetType().Name}&r");
+                }
+            }
+        }
             
         for (var x = 0; x < netServices.Count; x++)
         {
@@ -370,7 +457,7 @@ public class NetConnection : ServiceCollection
             lock (msgLock)
             {
                 writer.WriteByte((byte)NetHeader.Message);
-                writer.CompressInt64(msgWriter.Position);
+                writer.WriteUInt16((ushort)msgWriter.Position);
 
                 for (var x = 0; x < msgWriter.Position; x++)
                     writer.WriteByte(msgWriter.Buffer[x]);
@@ -401,7 +488,7 @@ public class NetConnection : ServiceCollection
         }
     }
 
-    private void Handle(ISerializableObject obj)
+    private bool Handle(ISerializableObject obj)
     {
         var type = obj.GetType();
 
@@ -410,26 +497,27 @@ public class NetConnection : ServiceCollection
             if (messageHandlers.TryGetValue(type, out var handler))
             {
                 handler(obj);
+                return true;
             }
-            else
+
+            for (var x = 0; x < netServices.Count; x++)
             {
-                for (var x = 0; x < netServices.Count; x++)
-                {
-                    var service = netServices[x];
+                var service = netServices[x];
 
-                    if (!service.IsValid || !service.IsRunning)
-                        continue;
+                if (!service.IsValid || !service.IsRunning)
+                    continue;
 
-                    if (service.Receive(obj))
-                        return;
-                }
-
-                log.Warn($"No handler for message of type &1{type.Name}&r");
+                if (service.Receive(obj))
+                    return true;
             }
+
+            log.Warn($"No handler for message of type &1{type.Name}&r");
+            return false;
         }
         catch (Exception ex)
         {
             log.Error($"Could not handle message of type &1{type.Name}&r:\n{ex}");
+            return true;
         }
     }
 
@@ -473,7 +561,7 @@ public class NetConnection : ServiceCollection
 
     private bool TryReadMessage(ByteReader reader)
     {
-        var count = (int)reader.DecompressInt64();
+        var count = reader.ReadUInt16();
         var position = reader.Position + count;
         
         log.DebugIf($"Attempting to read messages (Count={count}; Position={position}; CurPosition={reader.Position}) ...", debugLogs);
@@ -482,7 +570,7 @@ public class NetConnection : ServiceCollection
         {
             try
             {
-                var index = (ushort)reader.DecompressUInt64();
+                var index = reader.ReadUInt16();
                 var serializer = ObjectSerializer.GetSerializer(index);
 
                 if (serializer == null)
@@ -501,7 +589,8 @@ public class NetConnection : ServiceCollection
 
                 serializer.Deserialize(message, reader);
 
-                Handle(message);
+                if (!Handle(message) && MaxRetransmissions > 0)
+                    retransmissions.Enqueue(new(0, message));
             }
             catch (Exception ex)
             {

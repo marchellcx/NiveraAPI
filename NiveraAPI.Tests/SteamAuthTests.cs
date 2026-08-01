@@ -26,7 +26,7 @@ public static class SteamAuthTests
     {
         Log.Info("Starting SteamAuth server ..");
 
-        var session = SteamAuthManager.AuthOnce("127.0.0.1", false, s =>
+        var session = SteamAuthManager.AuthOnce("127.0.0.1", s =>
         {
             Log.Info($"Result: &6[{s.Id}]&r &1{s.Error}&r = &3{s.SteamId}&r");
         });

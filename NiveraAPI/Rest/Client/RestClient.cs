@@ -21,6 +21,11 @@ namespace NiveraAPI.Rest.Client
 		
 		private volatile ActionQueue queue = new();
 		private volatile ConcurrentQueue<RestRequest> requestQueue = new();
+		
+		/// <summary>
+		/// Whether the client should log debug information.
+		/// </summary>
+		public bool DebugLogs { get; set; }
 
 		/// <summary>
 		/// Gets the number of HTTP requests currently in the internal request queue.
@@ -477,7 +482,7 @@ namespace NiveraAPI.Rest.Client
 				}
 			}
 
-			log.Debug("HTTP_REQ_QUEUE", $"{message.Method}: {message.RequestUri} ({httpContext.Request.Headers.Count()} headers)");
+			log.DebugIf("HttpQueue", $"{message.Method}: {message.RequestUri} ({httpContext.Request.Headers.Count()} headers)", DebugLogs);
 
 			requestQueue.Enqueue(new()
 			{
@@ -533,13 +538,13 @@ namespace NiveraAPI.Rest.Client
 						{
 							if (request != null)
 							{
-								log.Debug("HTTP_REQ_UPDATE", $"Sending {request.Context.Request.Method}: {request.Context.Request.RequestUri}");
+								log.DebugIf("HttpUpdate", $"Sending {request.Context.Request.Method}: {request.Context.Request.RequestUri}", DebugLogs);
 
 								var httpResponseMessage = await client.SendAsync(request.Context.Request);
 								
 								if (httpResponseMessage != null)
 								{
-									log.Debug("HTTP_REQ_UPDATE", $"Received: {httpResponseMessage.StatusCode}");
+									log.DebugIf("HttpUpdate", $"Received: {httpResponseMessage.StatusCode}", DebugLogs);
 
 									await request.Context.OnResponseReceived(httpResponseMessage, null!);
 									
@@ -553,7 +558,7 @@ namespace NiveraAPI.Rest.Client
 							
 							queue.AddToQueue(() => OnResponse(request.Context, request));
 
-							log.Error("HTTP_REQ_UPDATE", error);
+							log.Error("HttpUpdate", error);
 						}
 					}
 				}

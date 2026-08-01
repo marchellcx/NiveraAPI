@@ -4,32 +4,46 @@ using System.Net;
 using System.Net.Sockets;
 
 using NiveraAPI.IO.Network.API.Internal;
-
+using NiveraAPI.IO.Network.API.Internal.Udp;
 using NiveraAPI.Logs;
 using NiveraAPI.Services;
 using NiveraAPI.Utilities;
 
 namespace NiveraAPI.IO.Network;
 
+/// <summary>
+/// Represents a networking server that supports both TCP and UDP communication modes,
+/// allowing the management of connections, data transmission, and service provisioning.
+/// </summary>
 public class NetServer : ServiceCollection
 {
     private static volatile LogSink log = LogManager.GetSource("IO", "NetServer");
 
+    #region UDP fields
+    private long udpSentBytes;
+    private volatile int udpRecvThreads = 8;
+    
+    private volatile Socket udpSocket;
+    private volatile UdpServerRecvPipe udpRecvPipe;
+    private volatile CancellationTokenSource udpCts;
+    
+    private volatile ConcurrentQueue<UdpSendData> udpSendPool = new();
+    #endregion
+    
+    #region TCP fields
+    private volatile TcpListener tcpListener;
+    
+    private volatile CancellationTokenSource tcpSendCts;
+    private volatile CancellationTokenSource tcpConnectCts;
+    #endregion
+
+    internal volatile bool isUdpMode;
     internal volatile bool debugLogs;
     
     private volatile int connId = 0;
-    private volatile int recvThreads = 8;
-    
-    private volatile Socket socket;
-    private volatile ServerRecvPipe recvPipe;
-    private volatile CancellationTokenSource cts;
-
-    private volatile NetConnection[] conns = [];
-    private volatile ConcurrentQueue<SendData> sendPool = new();
 
     private volatile ActionQueue queue = new();
-
-    private long sentBytes;
+    private volatile ConcurrentDictionary<int, NetConnection> conns = new();
 
     /// <summary>
     /// Gets called when a new connection is established.
@@ -42,23 +56,28 @@ public class NetServer : ServiceCollection
     public event Action<NetConnection>? Disconnected; 
     
     /// <summary>
+    /// The number of threads used for receiving data.
+    /// </summary>
+    public int UdpReceiveThreads
+    {
+        get => udpRecvThreads;
+        set => udpRecvThreads = value;
+    }
+    
+    /// <summary>
     /// Gets the total number of bytes sent by the server.
     /// </summary>
-    public long SentBytes => sentBytes;
+    public long SentBytes => udpSentBytes;
 
     /// <summary>
     /// Gets the total number of bytes received by the server.
     /// </summary>
-    public long ReceivedBytes => recvPipe?.ReceivedBytes ?? 0;
-
+    public long ReceivedBytes => udpRecvPipe?.ReceivedBytes ?? 0;
+    
     /// <summary>
-    /// The number of threads used for receiving data.
+    /// Gets or sets the maximum number of retransmissions allowed for a message that does not have a handler assigned until it is discarded.
     /// </summary>
-    public int ReceiveThreads
-    {
-        get => recvThreads;
-        set => recvThreads = value;
-    }
+    public int MaxRetransmissions { get; set; }
 
     /// <summary>
     /// Whether debug logs are enabled.
@@ -68,6 +87,11 @@ public class NetServer : ServiceCollection
         get => debugLogs;
         set => debugLogs = value;
     }
+    
+    /// <summary>
+    /// Whether the server is currently using UDP for communication.
+    /// </summary>
+    public bool IsUsingUdp => isUdpMode;
 
     /// <summary>
     /// Gets the logging mechanism associated with the network server.
@@ -82,112 +106,38 @@ public class NetServer : ServiceCollection
     /// <summary>
     /// The list of connections currently connected to the server.
     /// </summary>
-    public IReadOnlyList<NetConnection> Connections => conns;
+    public IReadOnlyDictionary<int, NetConnection> Connections => conns;
 
     /// <summary>
-    /// Begins listening for incoming network connections on the specified port.
-    /// If no port is specified, a default value of 0 is used, which allows the operating system to select an available port.
+    /// Starts listening for incoming connections on the specified port, using TCP or UDP based on the provided configuration.
     /// </summary>
-    /// <param name="port">The port on which the server will listen for incoming connections. Use 0 to let the operating system assign a random available port.</param>
-    public void Listen(int port = 0)
+    /// <param name="port">The port number to listen on. If set to 0, an available port will be selected automatically.</param>
+    /// <param name="useUdp">Specifies whether to use UDP (true) or TCP (false) for communication.</param>
+    public void Listen(int port = 0, bool useUdp = true)
     {
-        log.DebugIf($"Starting server on port {port}...", debugLogs);
-        
-        if (socket != null)
-            Stop();
-        
-        if (!IsRunning)
-            Start();
+        isUdpMode = useUdp;
 
-        connId = 0;
-        sentBytes = 0;
-        
-        log.DebugIf("Creating socket...", debugLogs);
-        
-        socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        socket.Blocking = false;
-        
-        socket.SendBufferSize = NetSettings.MTU;
-        socket.ReceiveBufferSize = NetSettings.MTU;
-        
-        log.DebugIf("Binding socket...", debugLogs);
-        
-        socket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.ReuseAddress, true);
-        socket.Bind(new IPEndPoint(IPAddress.Any, port));
-
-        log.DebugIf($"Bound to port {port}", debugLogs);
-        
-        recvPipe = new(this, socket);
-        recvPipe.Start();
-        
-        log.DebugIf("RecvPipe started", debugLogs);
-
-        cts = new();
-        
-        ThreadPool.QueueUserWorkItem(_ => Send());
-        
-        log.DebugIf("Send thread started", debugLogs);
+        if (useUdp)
+        {
+            UdpListen(port);
+        }
+        else
+        {
+            TcpListen(port);
+        }
     }
 
     /// <inheritdoc />
     public override void Stop()
     {
-        log.DebugIf("Stopping server...", debugLogs);
-        
-        base.Stop();
-        
-        cts.Cancel();
-        
-        log.DebugIf("Stopping RecvPipe", debugLogs);
-
-        if (recvPipe != null)
+        if (isUdpMode)
         {
-            recvPipe.Stop();
-            recvPipe = null!;
+            UdpStop();
         }
-        
-        log.DebugIf("Stopping connections...", debugLogs);
-
-        for (var x = 0; x < conns.Length; x++)
+        else
         {
-            try
-            {
-                conns[x].Stop();
-            }
-            catch (Exception ex)
-            {
-                log.Error(ex);
-            }
+            TcpStop();
         }
-
-        try
-        {
-            if (socket != null)
-            {
-                log.DebugIf("Closing socket...", debugLogs);
-                
-                socket.Close();
-                socket.Dispose();
-            }
-        }
-        catch (Exception ex)
-        {
-            log.Error(ex);
-        }
-        
-        log.DebugIf("Clearing send pool", debugLogs);
-
-        while (sendPool.TryDequeue(out var data))
-        {
-            data.Args.Dispose();
-            data.Writer.ReturnToPool();
-        }
-
-        socket = null!;
-
-        conns = [];
-        
-        log.DebugIf("Server stopped", debugLogs);
     }
 
     /// <summary>
@@ -201,11 +151,52 @@ public class NetServer : ServiceCollection
     {
         if (conn == null)
             throw new ArgumentNullException(nameof(conn));
-
-        if (!conns.Contains(conn))
-            throw new ArgumentException("Connection is not connected to this server");
         
         queue.AddToQueue(() => RemoveConnection(conn));
+    }
+
+    /// <summary>
+    /// Disconnects all currently connected clients by removing their connections from the server's connection list.
+    /// This operation ensures that no active connections remain.
+    /// </summary>
+    public void DisconnectAll()
+    {
+        foreach (var kvp in conns)
+        {
+            log.DebugIf($"Removing connection {kvp.Key}", debugLogs);
+            
+            try
+            {
+                kvp.Value.Stop();
+
+                Disconnected?.Invoke(kvp.Value);
+                
+                if (kvp.Value.tcpClient != null)
+                {
+                    try
+                    {
+                        kvp.Value.tcpClient.Close();
+                        kvp.Value.tcpClient = null!;
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+                    
+                    kvp.Value.tcpSendPipe?.Stop();
+                    kvp.Value.tcpSendPipe = null!;
+                    
+                    kvp.Value.tcpRecvPipe?.Stop();
+                    kvp.Value.tcpRecvPipe = null!;
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex);
+            }
+        }
+
+        conns.Clear();
     }
 
     /// <summary>
@@ -221,29 +212,393 @@ public class NetServer : ServiceCollection
     /// </remarks>
     public void Update()
     {
+        if (isUdpMode)
+        {
+            UdpUpdate();
+        }
+        else
+        {
+            TcpUpdate();
+        }
+    }
+    
+    private void RemoveConnection(NetConnection conn)
+    {
+        conns.TryRemove(conn.Id, out _);
+        
+        queue.AddToQueue(() =>
+        {
+            log.DebugIf($"Removing connection {conn.Id}", debugLogs);
+            
+            try
+            {
+                if (conn.tcpClient != null)
+                {
+                    try
+                    {
+                        conn.tcpClient.Close();
+                        conn.tcpClient = null!;
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+                    
+                    conn.tcpSendPipe?.Stop();
+                    conn.tcpSendPipe = null!;
+                    
+                    conn.tcpRecvPipe?.Stop();
+                    conn.tcpRecvPipe = null!;
+                }
+                
+                conn.Stop();
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex);
+            }
+
+            Disconnected?.Invoke(conn);
+        });
+    }
+    
+    #region TCP Networking
+    private void TcpStop()
+    {
+        log.DebugIf("Stopping server...", debugLogs);
+        
+        base.Stop();
+        
+        DisconnectAll();
+        
+        tcpSendCts.Cancel();
+        tcpConnectCts.Cancel();
+
+        try
+        {
+            if (tcpListener != null)
+            {
+                tcpListener.Stop();
+                tcpListener = null!;
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+    
+    private void TcpSend(object obj)
+    {
+        var cts = (CancellationTokenSource)obj;
+        
+        while (!cts.IsCancellationRequested)
+        {
+            Thread.Sleep(1);
+            
+            try
+            {
+                foreach (var kvp in conns)
+                {
+                    if (!kvp.Value.IsValid || !kvp.Value.IsRunning)
+                        continue;
+
+                    if (!kvp.Value.HasData)
+                        continue;
+                    
+                    if (kvp.Value.tcpSendPipe == null)
+                        continue;
+                    
+                    log.DebugIf($"Connection &1{kvp.Value.EndPoint}&r has data, serializing ..", debugLogs);
+                    
+                    var writer = kvp.Value.tcpSendPipe.GetWriter();
+
+                    try
+                    {
+                        if (!kvp.Value.TryWrite(writer))
+                        {
+                            log.DebugIf($"Connection &1{kvp.Value.EndPoint}&r is not ready to send data, queuing ..", debugLogs);
+                            
+                            kvp.Value.tcpSendPipe.ReturnWriter(writer);
+                        }
+                        else
+                        {
+                            kvp.Value.tcpSendPipe.Send(writer);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Error sending data to &1{kvp.Value.EndPoint}&r:\n{ex}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex);
+            }
+        }
+    }
+    
+    private void TcpUpdate()
+    {
         queue.UpdateQueue();
         
-        if (recvPipe is { Size: > 0 })
+        foreach (var kvp in conns)
         {
-            while (recvPipe.Grab(out var data))
+            try
+            {
+                if (kvp.Value.tcpRecvPipe == null)
+                {
+                    log.Warn($"Encountered connection with a null RecvPipe!");
+                    continue;
+                }
+
+                while (kvp.Value.tcpRecvPipe.TryGrab(out var reader))
+                {
+                    try
+                    {
+                        kvp.Value.Receive(reader);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Error($"Could not process incoming data for connection &1{kvp.Value.EndPoint}&r:\n{ex}");
+                        
+                        kvp.Value.tcpRecvPipe.Return(reader);
+                        continue;
+                    }
+
+                    kvp.Value.tcpRecvPipe.Return(reader);
+                }
+                
+                kvp.Value.Update();
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Could not update connection:\n{ex}");
+            }
+        }
+    }
+
+    private void TcpListen(int port)
+    {
+        log.DebugIf($"Starting server on port {port}...", debugLogs);
+
+        if (tcpListener != null)
+        {
+            DisconnectAll();
+
+            try
+            {
+                tcpListener.Stop();
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+
+        tcpSendCts?.Cancel();
+        tcpConnectCts?.Cancel();
+
+        tcpSendCts = new();
+        tcpConnectCts = new();
+        
+        tcpListener = new(IPAddress.Any, port);
+        tcpListener.ExclusiveAddressUse = false;
+        
+        tcpListener.Start();
+        
+        ThreadPool.QueueUserWorkItem(TcpSend, tcpSendCts);
+        ThreadPool.QueueUserWorkItem(TcpAccept, tcpConnectCts);
+    }
+
+    private void TcpRegister(TcpClient client)
+    {
+        log.DebugIf($"Registering new connection: {client.Client.RemoteEndPoint}", debugLogs);
+        
+        var conn = new NetConnection(this, client.Client.RemoteEndPoint as IPEndPoint, Interlocked.Increment(ref connId));
+
+        conn.tcpClient = client;
+        conn.clientEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
+
+        conn.tcpSendPipe = new(client, conn);
+        conn.tcpSendPipe.Start();
+        
+        conn.tcpRecvPipe = new(client, conn);
+        conn.tcpRecvPipe.Start();
+        
+        conn.Start();
+        
+        conns.TryAdd(conn.Id, conn);
+        
+        ProvidedServices.ForEach(t => conn.AddService(t, []));
+        
+        Connected?.Invoke(conn);
+    }
+
+    private void TcpAccept(object obj)
+    {
+        var cts = (CancellationTokenSource)obj;
+
+        while (!cts.IsCancellationRequested)
+        {
+            try
+            {
+                var client = tcpListener.AcceptTcpClient();
+
+                if (client != null)
+                {
+                    try
+                    {
+                        client.NoDelay = true;
+
+                        client.SendBufferSize = NetSettings.MTU;
+                        client.ReceiveBufferSize = NetSettings.MTU;
+
+                        client.ExclusiveAddressUse = false;
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+
+                    queue.AddToQueue(() => TcpRegister(client));
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex);
+            }
+        }
+    }
+    #endregion
+
+    #region UDP Networking
+    private void UdpListen(int port)
+    {
+        log.DebugIf($"Starting server on port {port}...", debugLogs);
+        
+        if (udpSocket != null)
+            Stop();
+        
+        if (!IsRunning)
+            Start();
+
+        connId = 0;
+        udpSentBytes = 0;
+        
+        log.DebugIf("Creating socket...", debugLogs);
+        
+        udpSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+        udpSocket.Blocking = false;
+        
+        udpSocket.SendBufferSize = NetSettings.MTU;
+        udpSocket.ReceiveBufferSize = NetSettings.MTU;
+        
+        log.DebugIf("Binding socket...", debugLogs);
+        
+        udpSocket.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.ReuseAddress, true);
+        udpSocket.Bind(new IPEndPoint(IPAddress.Any, port));
+
+        log.DebugIf($"Bound to port {port}", debugLogs);
+        
+        udpRecvPipe = new(this, udpSocket);
+        udpRecvPipe.Start();
+        
+        log.DebugIf("RecvPipe started", debugLogs);
+
+        udpCts = new();
+        
+        ThreadPool.QueueUserWorkItem(_ => UdpSend());
+        
+        log.DebugIf("Send thread started", debugLogs);
+    }
+
+    private void UdpStop()
+    {
+        log.DebugIf("Stopping server...", debugLogs);
+        
+        base.Stop();
+        
+        udpCts.Cancel();
+        
+        log.DebugIf("Stopping RecvPipe", debugLogs);
+
+        if (udpRecvPipe != null)
+        {
+            udpRecvPipe.Stop();
+            udpRecvPipe = null!;
+        }
+        
+        log.DebugIf("Stopping connections...", debugLogs);
+
+        foreach (var kvp in conns)
+        {
+            try
+            {
+                kvp.Value.Stop();
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex);
+            }
+        }
+
+        try
+        {
+            if (udpSocket != null)
+            {
+                log.DebugIf("Closing socket...", debugLogs);
+                
+                udpSocket.Close();
+                udpSocket.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Error(ex);
+        }
+        
+        log.DebugIf("Clearing send pool", debugLogs);
+
+        while (udpSendPool.TryDequeue(out var data))
+        {
+            data.Args.Dispose();
+            data.Writer.ReturnToPool();
+        }
+
+        udpSocket = null!;
+
+        conns.Clear();
+        
+        log.DebugIf("Server stopped", debugLogs);
+    }
+    
+    private void UdpUpdate()
+    {
+        queue.UpdateQueue();
+        
+        if (udpRecvPipe is { Size: > 0 })
+        {
+            while (udpRecvPipe.Grab(out var data))
             {
                 try
                 {
                     var ip = (IPEndPoint)data.Args.RemoteEndPoint;
-                    var conn = FindConnection(ip);
+                    var conn = UdpFindConnection(ip);
 
                     if (ip.Address == IPAddress.Any && ip.Port == 0)
                     {
                         log.Warn($"Received data from invalid IP: {ip} ({data.Args.RemoteEndPoint})");
                         
-                        recvPipe.Return(data);
+                        udpRecvPipe.Return(data);
                         continue;
                     }
                     
                     log.DebugIf($"Received {data.Reader.Count} bytes from {ip}", debugLogs);
 
                     if (conn == null)
-                        conn = RegisterConnection(ip);
+                        conn = UdpRegisterConnection(ip);
 
                     conn.Receive(data.Reader);
                 }
@@ -252,47 +607,43 @@ public class NetServer : ServiceCollection
                     log.Error($"Could not process received data:\n{ex}");
                 }
                 
-                recvPipe.Return(data);
+                udpRecvPipe.Return(data);
             }
         }
-
-        var array = conns;
-
-        for (var x = 0; x < array.Length; x++)
+        
+        foreach (var kvp in conns)
         {
-            var conn = array[x];
-
             try
             {
-                conn.Update();
+                kvp.Value.Update();
             }
             catch (Exception ex)
             {
                 log.Error($"Could not update connection:\n{ex}");
             }
 
-            if (conn.Ping.IsTimedOut)
+            if (kvp.Value.Ping.IsTimedOut)
             {
-                log.DebugIf($"Connection &1{conn.EndPoint}&r timed out, removing", debugLogs);
+                log.DebugIf($"Connection &1{kvp.Value.EndPoint}&r timed out, removing", debugLogs);
                 
-                RemoveConnection(conn);
+                RemoveConnection(kvp.Value);
             }
         }
     }
 
-    private void Send()
+    private void UdpSend()
     {
         void Completed(object _, SocketAsyncEventArgs args)
         {
-            if (args.UserToken is SendData data)
-                sendPool.Enqueue(data);
+            if (args.UserToken is UdpSendData data)
+                udpSendPool.Enqueue(data);
 
             if (args.SocketError != SocketError.Success
                 && args.RemoteEndPoint is IPEndPoint endPoint)
             {
                 log.Error($"Send failed ({endPoint}): {args.SocketError}");
                 
-                if (FindConnection(endPoint) is { } conn)
+                if (UdpFindConnection(endPoint) is { } conn)
                 {
                     log.DebugIf("Removing connection due to send failure", debugLogs);
                     
@@ -304,14 +655,14 @@ public class NetServer : ServiceCollection
                 }
             }
             
-            Interlocked.Add(ref sentBytes, args.BytesTransferred);
+            Interlocked.Add(ref udpSentBytes, args.BytesTransferred);
             
-            log.DebugIf($"Sent {args.BytesTransferred} bytes ({sentBytes} total)", debugLogs);
+            log.DebugIf($"Sent {args.BytesTransferred} bytes ({udpSentBytes} total)", debugLogs);
         }
         
-        SendData GetData()
+        UdpSendData GetData()
         {
-            if (!sendPool.TryDequeue(out var data))
+            if (!udpSendPool.TryDequeue(out var data))
             {
                 data = new();
                 data.Args.Completed += Completed;
@@ -321,7 +672,7 @@ public class NetServer : ServiceCollection
             return data;
         }
 
-        while (!cts.IsCancellationRequested)
+        while (!udpCts.IsCancellationRequested)
         {
             Thread.Sleep(1);
             
@@ -329,46 +680,44 @@ public class NetServer : ServiceCollection
             {
                 var array = conns;
                 
-                for (var x = 0; x < array.Length; x++)
+                foreach (var kvp in conns)
                 {
-                    var conn = array[x];
-
-                    if (!conn.IsValid || !conn.IsRunning)
+                    if (!kvp.Value.IsValid || !kvp.Value.IsRunning)
                         continue;
 
-                    if (!conn.HasData)
+                    if (!kvp.Value.HasData)
                         continue;
                     
                     var data = GetData();
                     
-                    log.DebugIf($"Connection &1{conn.EndPoint}&r has data, serializing ..", debugLogs);
+                    log.DebugIf($"Connection &1{kvp.Value.EndPoint}&r has data, serializing ..", debugLogs);
 
                     try
                     {
-                        if (!conn.TryWrite(data.Writer))
+                        if (!kvp.Value.TryWrite(data.Writer))
                         {
-                            log.DebugIf($"Connection &1{conn.EndPoint}&r is not ready to send data, queuing ..", debugLogs);
+                            log.DebugIf($"Connection &1{kvp.Value.EndPoint}&r is not ready to send data, queuing ..", debugLogs);
                             
-                            sendPool.Enqueue(data);
+                            udpSendPool.Enqueue(data);
                             continue;
                         }
 
-                        data.Args.RemoteEndPoint = conn.serverSendEndPoint;
+                        data.Args.RemoteEndPoint = kvp.Value.serverSendEndPoint;
                         data.Args.SetBuffer(data.Args.Buffer, 0, data.Writer.Position);
 
-                        log.DebugIf($"Sending &1{data.Writer.Position}&r bytes to &1{conn.EndPoint}&r ({conn.serverSendEndPoint}) ..", debugLogs);
+                        log.DebugIf($"Sending &1{data.Writer.Position}&r bytes to &1{kvp.Value.EndPoint}&r ({kvp.Value.serverSendEndPoint}) ..", debugLogs);
 
-                        var pending = socket.SendToAsync(data.Args);
+                        var pending = udpSocket.SendToAsync(data.Args);
                         
                         if (!pending)
                             Completed(null!, data.Args);
                     }
                     catch (Exception ex)
                     {
-                        log.Error($"Error sending data to &1{conn.EndPoint}&r:\n{ex}");
+                        log.Error($"Error sending data to &1{kvp.Value.EndPoint}&r:\n{ex}");
                     }
 
-                    sendPool.Enqueue(data);
+                    udpSendPool.Enqueue(data);
                 }
             }
             catch (Exception ex)
@@ -377,58 +726,34 @@ public class NetServer : ServiceCollection
             }
         }
     }
-
-    private void RemoveConnection(NetConnection conn)
+    
+    private NetConnection? UdpFindConnection(IPEndPoint endPoint)
     {
-        queue.AddToQueue(() =>
+        foreach (var kvp in conns)
         {
-            log.DebugIf($"Removing connection {conn.Id}", debugLogs);
-            
-            try
+            if (kvp.Value.EndPoint.Equals(endPoint))
             {
-                conn.Stop();
+                return kvp.Value;
             }
-            catch (Exception ex)
-            {
-                log.Error(ex);
-            }
-
-            Disconnected?.Invoke(conn);
-        });
-
-        conns = conns
-            .Except([conn])
-            .ToArray();
-    }
-
-    private NetConnection? FindConnection(IPEndPoint endPoint)
-    {
-        for (var x = 0; x < conns.Length; x++)
-        {
-            var conn = conns[x];
-
-            if (conn.EndPoint.Equals(endPoint))
-                return conn;
         }
 
         return null;
     }
 
-    private NetConnection RegisterConnection(IPEndPoint endPoint)
+    private NetConnection UdpRegisterConnection(IPEndPoint endPoint)
     {
         log.DebugIf($"Registering new connection: {endPoint}", debugLogs);
         
         var conn = new NetConnection(this, endPoint, Interlocked.Increment(ref connId));
         
         conn.Start();
-
-        conns = conns
-            .Append(conn)
-            .ToArray();
+        
+        conns.TryAdd(conn.Id, conn);
         
         ProvidedServices.ForEach(t => conn.AddService(t, []));
         
         Connected?.Invoke(conn);
         return conn;
     }
+    #endregion
 }

@@ -40,6 +40,11 @@ public class DbClient : NetService
     public bool IsAuthenticated { get; private set; }
     
     /// <summary>
+    /// Whether or not to show debug logs.
+    /// </summary>
+    public bool DebugLogs { get; set; }
+    
+    /// <summary>
     /// The permissions of the client.
     /// </summary>
     public DbPerms Permissions { get; private set; }
@@ -48,11 +53,6 @@ public class DbClient : NetService
     /// Gets or sets the maximum duration of a transaction before being timed out.
     /// </summary>
     public TimeSpan TimeOut { get; set; } = TimeSpan.FromSeconds(2);
-    
-    /// <summary>
-    /// The services required by this service.
-    /// </summary>
-    public override Type[] RequiredServices { get; } = [typeof(DbConfig)];
     
     /// <summary>
     /// The number of transactions that are currently waiting to be completed.
@@ -706,8 +706,8 @@ public class DbClient : NetService
         if (diff > longestDiff || longestDiff == 0) longestDiff = diff;
         if (diff < shortestDiff || shortestDiff == 0) shortestDiff = diff;
         
-        Log.Debug($"Received response for transaction &1{transaction.Id}&r: &6{msg.Data?.Length ?? 0} bytes&r, " +
-                  $"result: &3{msg.Result}&r, duration: &1{diff}&r ms (average: &6{AverageDuration}&r ms)");
+        Log.DebugIf($"Received response for transaction &1{transaction.Id}&r: &6{msg.Data?.Length ?? 0} bytes&r, " +
+                  $"result: &3{msg.Result}&r, duration: &1{diff}&r ms (average: &6{AverageDuration}&r ms)", DebugLogs);
         
         transactions.Remove(transaction);
 

@@ -78,10 +78,28 @@ namespace NiveraAPI.Logs
         /// <param name="enableDebug">A boolean value indicating whether debug logging is enabled. If true, the message will not be logged.</param>
         public void DebugIf(object msg, bool enableDebug)
         {
-            if (enableDebug)
+            if (!enableDebug)
                 return;
 
             Print(LogLevel.Debug, null, ObjectToString(msg));
+        }
+
+        /// <summary>
+        /// Writes a debug-level log message if debugging is enabled.
+        /// </summary>
+        /// <remarks>
+        /// This method conditionally logs messages at the debug level based on the provided enableDebug flag.
+        /// It is useful for controlling debug log generation without incurring overhead when debug logging is disabled.
+        /// </remarks>
+        /// <param name="method">The name of the method or context where the log is being generated. Can be null or a string representing the source method.</param>
+        /// <param name="msg">The message or object to log. If the object is not a string, its string representation will be used.</param>
+        /// <param name="enableDebug">A boolean value indicating whether debug logging is enabled. If false, the message will not be logged.</param>
+        public void DebugIf(string method, object msg, bool enableDebug)
+        {
+            if (!enableDebug)
+                return;
+
+            Print(LogLevel.Debug, method, ObjectToString(msg));
         }
 
         /// <summary>
@@ -100,7 +118,7 @@ namespace NiveraAPI.Logs
         /// <param name="method">The name of the method or operation associated with the log entry. This value is used to identify the source
         /// of the log message.</param>
         /// <param name="msg">The message to log. If the object is not a string, its string representation is used.</param>
-        public void Debug(string method, object msg)
+        public void Debug(string method, object msg) 
             => Print(LogLevel.Debug, method, ObjectToString(msg));
 
         /// <summary>

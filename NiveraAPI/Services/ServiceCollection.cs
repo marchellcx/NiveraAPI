@@ -172,6 +172,48 @@ public class ServiceCollection : IServiceCollection
     }
 
     /// <summary>
+    /// Starts all services in the service collection that are not currently running.
+    /// </summary>
+    public void StartAllServices()
+    {
+        foreach (var kvp in services)
+        {
+            try
+            {
+                if (!kvp.Value.IsRunning)
+                {
+                    kvp.Value.Start();
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stops all services within the collection that are currently running.
+    /// </summary>
+    public void StopAllServices()
+    {
+        foreach (var kvp in services)
+        {
+            try
+            {
+                if (kvp.Value.IsRunning)
+                {
+                    kvp.Value.Stop();
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+    }
+
+    /// <summary>
     /// Called when a service is added to the collection.
     /// </summary>
     /// <param name="service">The service instance that was added.</param>

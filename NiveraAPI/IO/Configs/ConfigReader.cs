@@ -40,7 +40,7 @@ public static class ConfigReader
     {
         if (lines == null)
             throw new ArgumentNullException(nameof(lines));
-        
+
         var builder = new StringBuilder();
         var read = new Dictionary<string, string>();
 
@@ -49,24 +49,21 @@ public static class ConfigReader
         string? key = null;
         string? value = null;
         string? section = null;
-        
+
         void SaveValue()
         {
-            if (DebugLogs)
-                Log.Debug("SaveValue()");
-            
+            Log.Debug("SaveValue()", DebugLogs);
+
             if (builder.Length > 0 && !string.IsNullOrEmpty(key))
             {
-                if (DebugLogs)
-                    Log.Debug($"Builder length &3{builder.Length}&r, key &3{key}&r, section &3{section ?? "null"}&r");
-                
+                Log.Debug($"Builder length &3{builder.Length}&r, key &3{key}&r, section &3{section ?? "null"}&r",
+                    DebugLogs);
+
                 value = builder.ToString();
 
-                if (DebugLogs)
-                {
-                    Log.Debug("Value");
-                    Log.Debug(value);
-                }
+
+                Log.Debug("Value", DebugLogs);
+                Log.Debug(value, DebugLogs);
 
                 if (!string.IsNullOrEmpty(section))
                     read[section + "." + key] = value;
@@ -76,56 +73,55 @@ public static class ConfigReader
                 key = null;
                 value = null;
             }
-            else if (DebugLogs)
+            else
             {
-                Log.Debug("No value to save");
+                Log.Debug("No value to save", DebugLogs);
             }
 
             builder.Clear();
         }
-        
-        if (DebugLogs)
-            Log.Debug($"Reading config file, {lines.Length} lines");
+
+        Log.Debug($"Reading config file, {lines.Length} lines", DebugLogs);
 
         for (var x = 0; x < lines.Length; x++)
         {
             var line = lines[x].TrimEnd(' ');
             var trimmedLine = line.Trim();
-            
-            if (DebugLogs)
-                Log.Debug($"Line: &3{line}&r ({x} / {lines.Length}), section: &3{section ?? "null"}&r, key: &3{key ?? "null"}&r");
+
+            Log.Debug(
+                $"Line: &3{line}&r ({x} / {lines.Length}), section: &3{section ?? "null"}&r, key: &3{key ?? "null"}&r",
+                DebugLogs);
 
             if (trimmedLine.Length < 1
                 || string.IsNullOrWhiteSpace(trimmedLine)) // Ignore empty lines
             {
                 if (DebugLogs)
-                    Log.Debug("Whitespace line");
-                
+                    Log.Debug("Whitespace line", DebugLogs);
+
                 if (isInValue) // Unless the empty line belongs to the value
                 {
-                    if (DebugLogs)
-                        Log.Debug("Currently in value, appending empty line");
+                    Log.Debug("Currently in value, appending empty line", DebugLogs);
 
                     if (section != null)
                     {
                         if (builder.Length > 0)
                             builder.AppendLine();
-                        
+
                         builder.AppendLine(new string(line.Skip(2).ToArray()));
                     }
                     else
                     {
                         if (builder.Length > 0)
                             builder.AppendLine();
-                        
+
                         builder.AppendLine(line);
                     }
 
                     builder.RemoveTrailingWhiteSpaces(true);
                 }
-                else if (DebugLogs)
+                else
                 {
-                    Log.Debug("Not in value, ignoring");
+                    Log.Debug("Not in value, ignoring", DebugLogs);
                 }
 
                 continue;
@@ -133,17 +129,15 @@ public static class ConfigReader
 
             if (trimmedLine[0] == '#') // Ignore comments
             {
-                if (DebugLogs)
-                    Log.Debug("Skipping comment");
-                
+                Log.Debug("Skipping comment", DebugLogs);
+
                 continue;
             }
 
             if (trimmedLine.Length == 1 && trimmedLine[0] == '}') // Handle section end
             {
-                if (DebugLogs)
-                    Log.Debug("Section end, saving value");
-                
+                Log.Debug("Section end, saving value", DebugLogs);
+
                 SaveValue();
 
                 section = null;
@@ -153,9 +147,8 @@ public static class ConfigReader
             if (char.IsLetter(trimmedLine[0])
                 && trimmedLine[trimmedLine.Length - 1] == '{') // Check for section start
             {
-                if (DebugLogs)
-                    Log.Debug("Section start, saving value");
-                
+                Log.Debug("Section start, saving value", DebugLogs);
+
                 SaveValue();
 
                 section = trimmedLine
@@ -167,13 +160,12 @@ public static class ConfigReader
 
             if (trimmedLine[0] == '[' && trimmedLine[trimmedLine.Length - 1] == ']')
             {
-                if (DebugLogs)
-                    Log.Debug("Key start, saving value");
-                
+                Log.Debug("Key start, saving value", DebugLogs);
+
                 SaveValue();
 
                 key = trimmedLine.Substring(1, trimmedLine.Length - 2)
-                                 .Trim();
+                    .Trim();
 
                 isInValue = true;
                 continue;
@@ -181,21 +173,20 @@ public static class ConfigReader
 
             if (isInValue)
             {
-                if (DebugLogs)
-                    Log.Debug("Appending to value");
+                Log.Debug("Appending to value", DebugLogs);
 
                 if (section != null)
                 {
                     if (builder.Length > 0)
                         builder.AppendLine();
-                    
+
                     builder.AppendLine(new string(line.Skip(2).ToArray()));
                 }
                 else
                 {
                     if (builder.Length > 0)
                         builder.AppendLine();
-                    
+
                     builder.AppendLine(line);
                 }
 
@@ -203,12 +194,11 @@ public static class ConfigReader
             }
             else if (DebugLogs)
             {
-                Log.Debug("Line not appended");
+                Log.Debug("Line not appended", DebugLogs);
             }
         }
-        
-        if (DebugLogs)
-            Log.Debug("Finished reading config file, saving last value");
+
+        Log.Debug("Finished reading config file, saving last value", DebugLogs);
 
         SaveValue();
         return read;

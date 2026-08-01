@@ -1,17 +1,21 @@
 using System.Collections.Concurrent;
-
 using System.Net;
 using System.Net.Sockets;
 
-namespace NiveraAPI.IO.Network.API.Internal;
+namespace NiveraAPI.IO.Network.API.Internal.Udp;
 
 /// <summary>
 /// Represents a server-side receive pipe for managing and processing incoming network data.
 /// This class provides functionality for receiving data from a socket and dispatching it
 /// to multiple threads for processing.
 /// </summary>
-public class ServerRecvPipe
+public class UdpServerRecvPipe
 {
+    /// <summary>
+    /// Whether to enable debug logs for the server receive pipe.
+    /// </summary>
+    public static bool DebugLogs { get; set; }
+    
     private static volatile IPEndPoint defaultEp = new(IPAddress.Any, 0);
 
     private volatile bool dummyReceived;
@@ -20,8 +24,8 @@ public class ServerRecvPipe
     private volatile NetServer server;
     private volatile CancellationTokenSource cts;
 
-    private volatile ConcurrentQueue<ReceivedData> dataPool = new();
-    private volatile ConcurrentQueue<ReceivedData> dataQueue = new();
+    private volatile ConcurrentQueue<UdpRecvData> dataPool = new();
+    private volatile ConcurrentQueue<UdpRecvData> dataQueue = new();
 
     private long recvBytes = 0;
 
@@ -36,11 +40,11 @@ public class ServerRecvPipe
     public long ReceivedBytes => recvBytes;
     
     /// <summary>
-    /// Initializes a new instance of the <see cref="ServerRecvPipe"/> class.
+    /// Initializes a new instance of the <see cref="UdpServerRecvPipe"/> class.
     /// </summary>
     /// <param name="server">The associated <see cref="NetServer"/> instance.</param>
     /// <param name="socket">The socket used for receiving data.</param>
-    public ServerRecvPipe(NetServer server, Socket socket)
+    public UdpServerRecvPipe(NetServer server, Socket socket)
     {
         this.server = server;
         this.socket = socket;
@@ -55,7 +59,7 @@ public class ServerRecvPipe
     {
         cts = new();
         
-        for (var x = 0; x < server.ReceiveThreads; x++)
+        for (var x = 0; x < server.UdpReceiveThreads; x++)
             StartThread(x);
     }
 
@@ -67,7 +71,7 @@ public class ServerRecvPipe
     {
         cts.Cancel();
         
-        server.Log.Debug("ServerRecvPipe", "Stopping threads...");
+        server.Log.DebugIf("ServerRecvPipe", "Stopping threads ...", DebugLogs);
 
         while (dataPool.TryDequeue(out var data)
                || dataQueue.TryDequeue(out data))
@@ -76,32 +80,32 @@ public class ServerRecvPipe
             data.Reader.ReturnToPool();
         }
 
-        server.Log.Debug("ServerRecvPipe", "Threads stopped, internal queues cleared");
+        server.Log.DebugIf("ServerRecvPipe", "Threads stopped, internal queues cleared", DebugLogs);
     }
 
     /// <summary>
-    /// Attempts to retrieve a <see cref="ReceivedData"/> instance from the queue.
+    /// Attempts to retrieve a <see cref="UdpRecvData"/> instance from the queue.
     /// </summary>
     /// <param name="data">
-    /// When this method returns, contains the <see cref="ReceivedData"/> instance removed from the queue,
+    /// When this method returns, contains the <see cref="UdpRecvData"/> instance removed from the queue,
     /// or null if the queue is empty.
     /// </param>
     /// <returns>
-    /// True if a <see cref="ReceivedData"/> instance was successfully dequeued; otherwise, false.
+    /// True if a <see cref="UdpRecvData"/> instance was successfully dequeued; otherwise, false.
     /// </returns>
-    public bool Grab(out ReceivedData data)
+    public bool Grab(out UdpRecvData data)
         => dataQueue.TryDequeue(out data);
 
     /// <summary>
-    /// Returns a <see cref="ReceivedData"/> instance to the data pool for reuse.
+    /// Returns a <see cref="UdpRecvData"/> instance to the data pool for reuse.
     /// </summary>
     /// <param name="data">
-    /// The <see cref="ReceivedData"/> object to be returned. This cannot be null.
+    /// The <see cref="UdpRecvData"/> object to be returned. This cannot be null.
     /// </param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when the provided <paramref name="data"/> is null.
     /// </exception>
-    public void Return(ReceivedData data)
+    public void Return(UdpRecvData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -115,18 +119,18 @@ public class ServerRecvPipe
         
         DispatchThread(data.Args);
         
-        server.Log.Debug("ServerRecvPipe", $"Started thread ID {index}");
+        server.Log.DebugIf("ServerRecvPipe", $"Started thread ID &3{index}&r", DebugLogs);
     }
 
     private void DispatchThread(SocketAsyncEventArgs args)
     {
         if (cts.IsCancellationRequested)
         {
-            server.Log.Debug("ServerRecvPipe", "Thread was cancelled");
+            server.Log.DebugIf("ServerRecvPipe", "Thread was cancelled", DebugLogs);
             return;
         }
 
-        if (args.UserToken is not ReceivedData data)
+        if (args.UserToken is not UdpRecvData data)
         {
             server.Log.Error("ServerRecvPipe", "UserToken is not a ReceivedData instance");
             return;
@@ -149,7 +153,7 @@ public class ServerRecvPipe
     
     private void OnCompleted(object _, SocketAsyncEventArgs args)
     {
-        if (args.UserToken is not ReceivedData data)
+        if (args.UserToken is not UdpRecvData data)
         {
             server.Log.Error("ServerRecvPipe", "OnCompleted received a SocketAsyncEventArgs instance with a null or invalid UserToken");
             return;
@@ -157,7 +161,7 @@ public class ServerRecvPipe
         
         if (cts.IsCancellationRequested)
         {
-            server.Log.Debug("ServerRecvPipe", "Thread was cancelled");
+            server.Log.DebugIf("ServerRecvPipe", "Thread was cancelled", DebugLogs);
             return;
         }
 
@@ -187,7 +191,7 @@ public class ServerRecvPipe
 
                 Interlocked.Add(ref recvBytes, args.BytesTransferred);
                 
-                server.Log.Debug("ServerRecvPipe", $"Received {args.BytesTransferred} bytes ({recvBytes} total)");
+                server.Log.DebugIf("ServerRecvPipe", $"Received {args.BytesTransferred} bytes ({recvBytes} total)", DebugLogs);
             }
         }
 
@@ -195,7 +199,7 @@ public class ServerRecvPipe
     }
 
 
-    private ReceivedData GetData()
+    private UdpRecvData GetData()
     {
         if (dataPool.TryDequeue(out var data))
             return data;

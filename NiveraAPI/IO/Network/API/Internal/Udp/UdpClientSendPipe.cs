@@ -1,18 +1,21 @@
-﻿using System.Net.Sockets;
-
-using System.Collections.Concurrent;
-
+﻿using System.Collections.Concurrent;
+using System.Net.Sockets;
 using NiveraAPI.IO.Serialization;
 
-namespace NiveraAPI.IO.Network.API.Internal;
+namespace NiveraAPI.IO.Network.API.Internal.Udp;
 
 /// <summary>
 /// Represents a client-side send pipe for managing and processing outbound network data.
 /// This class provides functionality for enqueuing data to be sent, retrieving reusable
 /// writers, and handling data transfer using an internal sending queue.
 /// </summary>
-public class ClientSendPipe
+public class UdpClientSendPipe
 {
+    /// <summary>
+    /// Whether to enable debug logs for the client send pipe.
+    /// </summary>
+    public static bool DebugLogs { get; set; }
+    
     private volatile Socket socket;
     private volatile NetClient client;
 
@@ -27,12 +30,12 @@ public class ClientSendPipe
     public long SentBytes => sentBytes;
 
     /// <summary>
-    /// Creates a new instance of the <see cref="ClientSendPipe"/> class.
+    /// Creates a new instance of the <see cref="UdpClientSendPipe"/> class.
     /// </summary>
     /// <param name="client">The associated <see cref="NetClient"/> instance.</param>
     /// <param name="socket">The underlying <see cref="Socket"/> for data transmission.</param>
     /// <exception cref="ArgumentNullException">Thrown if either <paramref name="client"/> or <paramref name="socket"/> is null.</exception>
-    public ClientSendPipe(NetClient client, Socket socket)
+    public UdpClientSendPipe(NetClient client, Socket socket)
     {
         this.client = client ?? throw new ArgumentNullException(nameof(client));
         this.socket = socket ?? throw new ArgumentNullException(nameof(socket));
@@ -43,7 +46,7 @@ public class ClientSendPipe
     /// </summary>
     public void Stop()
     {
-        client.Log.Debug("Stopping ClientSendPipe");
+        client.Log.DebugIf("Stopping UdpClientSendPipe", DebugLogs);
         
         while (pool.TryDequeue(out var writer))
             writer.ReturnToPool();
@@ -51,7 +54,7 @@ public class ClientSendPipe
         while (argsPool.TryDequeue(out var args))
             args.Dispose();
         
-        client.Log.Debug("ClientSendPipe stopped");
+        client.Log.DebugIf("UdpClientSendPipe stopped", DebugLogs);
 
         sentBytes = 0;
     }
@@ -86,8 +89,8 @@ public class ClientSendPipe
         }
         catch (Exception ex)
         {
-            client.Log.Error("ClientSendPipe", ex);
-            client.queue.AddToQueue(() => client.OnSendPipeError(SocketError.OperationAborted, ex));
+            client.Log.Error("UdpClientSendPipe", ex);
+            client.queue.AddToQueue(() => client.UdpOnSendPipeError(SocketError.OperationAborted, ex));
         }
     }
 
@@ -158,10 +161,10 @@ public class ClientSendPipe
         
         Interlocked.Add(ref sentBytes, args.BytesTransferred);
 
-        client.Log.Debug($"Sent {args.BytesTransferred} bytes ({args.SocketError}) ({sentBytes} total)");
+        client.Log.DebugIf($"Sent {args.BytesTransferred} bytes ({args.SocketError}) ({sentBytes} total)", DebugLogs);
         
         if (args.SocketError != SocketError.Success)
-            client.queue.AddToQueue(() => client.OnSendPipeError(args.SocketError, null!));
+            client.queue.AddToQueue(() => client.UdpOnSendPipeError(args.SocketError, null!));
         
         argsPool.Enqueue(args);
     }

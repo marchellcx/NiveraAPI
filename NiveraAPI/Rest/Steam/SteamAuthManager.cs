@@ -3,6 +3,7 @@ using NiveraAPI.Rest.Server;
 
 using NiveraAPI.Services;
 using NiveraAPI.Services.Interfaces;
+
 using NiveraAPI.Utilities;
 
 namespace NiveraAPI.Rest.Steam;
@@ -12,14 +13,14 @@ namespace NiveraAPI.Rest.Steam;
 /// </summary>
 public class SteamAuthManager : Service
 {
-    private const string steamOpenIdUrl =
-        "https://steamcommunity.com/openid/loginform/?goto=%2Fopenid%2Flogin%3Fopenid.identity%3Dhttp%253A%252F%252Fspecs.openid.net%252Fauth%252F2.0%252Fidentifier_select%26openid.claimed_id%3Dhttp%253A%252F%252Fspecs.openid.net%252Fauth%252F2.0%252Fidentifier_select%26openid.ns%3Dhttp%253A%252F%252Fspecs.openid.net%252Fauth%252F2.0%26openid.mode%3Dcheckid_setup%26openid.return_to%3D";
+    private const string steamOpenIdUrl = "https://steamcommunity.com/openid/loginform/?goto=%2Fopenid%2Flogin%3Fopenid.identity%3Dhttp%253A%252F%252Fspecs.openid.net%252Fauth%252F2.0%252Fidentifier_select%26openid.claimed_id%3Dhttp%253A%252F%252Fspecs.openid.net%252Fauth%252F2.0%252Fidentifier_select%26openid.ns%3Dhttp%253A%252F%252Fspecs.openid.net%252Fauth%252F2.0%26openid.mode%3Dcheckid_setup%26openid.return_to%3D";
+    
+    internal RestServer server;
     
     private int id = 0;
     private List<SteamAuthSession> sessions = new();
 
     private Stopwatch watch;
-    private RestServer server;
     private SteamAuthRoute route;
 
     /// <summary>
@@ -73,9 +74,7 @@ public class SteamAuthManager : Service
 
         session.ExpiresAtUtc = SessionLife > 0 ? session.CreatedAtUtc.AddMilliseconds(SessionLife) : null;
 
-        var callbackUrl = string.Concat(
-            (server.EnableHttps ? server.HttpsPrefix : server.HttpPrefix).TrimEnd('/'),
-            CallbackRoute, "?session=", session.Id, "?url=");
+        var callbackUrl = string.Concat(server.Prefix.TrimEnd('/'), CallbackRoute, "?session=", session.Id, "?url=");
 
         session.Url = string.Concat(steamOpenIdUrl, UrlEncode.EncodeUrl(callbackUrl));
         
@@ -116,6 +115,9 @@ public class SteamAuthManager : Service
     public override void Start()
     {
         base.Start();
+
+        if (Collection is not RestServer)
+            throw new InvalidOperationException("SteamAuthManager must be added to a RestServer");
 
         id = 0;
         
@@ -174,18 +176,17 @@ public class SteamAuthManager : Service
     /// and returns the session with an optional callback for session completion.
     /// </summary>
     /// <param name="ipOrDomain">The IP address or domain name of the server to host the authentication process.</param>
-    /// <param name="useHttps">Indicates whether HTTPS should be used for the server communication.</param>
     /// <param name="callback">The action to be invoked when the session is completed or cancelled.</param>
     /// <param name="sessionLife">The lifespan, in milliseconds, of the session before it expires. Defaults to 10000.</param>
     /// <param name="sessionLifeCheckDelay">The delay, in milliseconds, between session checks. Defaults to 1000.</param>
     /// <param name="data">Optional user-defined data associated with the session.</param>
     /// <param name="message">An optional message to include in the session data.</param>
     /// <returns>A new instance of <see cref="SteamAuthSession"/> representing the active authentication session.</returns>
-    public static SteamAuthSession AuthOnce(string ipOrDomain, bool useHttps, Action<SteamAuthSession> callback,
+    public static SteamAuthSession AuthOnce(string ipOrDomain, Action<SteamAuthSession> callback,
         int sessionLife = 10000, int sessionLifeCheckDelay = 1000,
         object? data = null, string? message = null)
     {
-        var server = new RestServer(ipOrDomain, !useHttps, useHttps);
+        var server = new RestServer(ipOrDomain);
         var manager = new SteamAuthManager();
 
         server.Start();

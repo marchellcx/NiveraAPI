@@ -17,6 +17,11 @@ public class EntityInfo
     private static volatile LogSink log = LogManager.GetSource("Networking", "EntityInfo");
     private static volatile ConcurrentDictionary<Type, EntityInfo> infoCache = new();
 
+    /// <summary>
+    /// Whether or not to enable debug logs for the entity info.
+    /// </summary>
+    public static bool DebugLogs { get; set; }
+    
     private List<RemoteMethod> cmds = new();
     private List<RemoteMethod> rpcs = new();
     private List<RemoteSyncVar> syncVars = new();
@@ -137,7 +142,7 @@ public class EntityInfo
 
     internal void WriteRpcs(Entity entity, ref ConfirmSpawnMessage msg)
     {
-        log.Debug($"Writing {rpcs.Count} RPCs to &3{Type.FullName}&r");
+        log.DebugIf($"Writing {rpcs.Count} RPCs to &3{Type.FullName}&r", DebugLogs);
         
         msg.Rpcs = new string[rpcs.Count];
         
@@ -146,7 +151,7 @@ public class EntityInfo
             var rpc = rpcs[x];
             var name = LocalFullMemberName(rpc.Target.Name);
             
-            log.Debug($"Writing RPC &3{name}&r (index: {x})");
+            log.DebugIf($"Writing RPC &3{name}&r (index: {x})", DebugLogs);
             
             msg.Rpcs[x] = name;
         }
@@ -154,7 +159,7 @@ public class EntityInfo
     
     internal void ReadRpcs(Entity entity, ConfirmSpawnMessage msg)
     {
-        log.Debug($"Reading {msg.Rpcs.Length} RPCs from &3{Type.FullName}&r (loaded: {rpcs.Count})");
+        log.DebugIf($"Reading {msg.Rpcs.Length} RPCs from &3{Type.FullName}&r (loaded: {rpcs.Count})", DebugLogs);
         
         if (msg.Rpcs.Length > 0 && rpcs.Count < 1)
         {
@@ -167,7 +172,7 @@ public class EntityInfo
                 method.Index = (ushort)x;
                 method.RemoteName = rpc;
                 
-                log.Debug($"Found RPC &3{method.RemoteName}&r (index: {method.Index})");
+                log.DebugIf($"Found RPC &3{method.RemoteName}&r (index: {method.Index})", DebugLogs);
 
                 rpcs.Add(method);
             }
@@ -178,7 +183,7 @@ public class EntityInfo
 
     internal void WriteCmds(Entity entity, ref EntitySpawnMessage msg)
     {
-        log.Debug($"Writing {cmds.Count} CMDs to &3{Type.FullName}&r");
+        log.DebugIf($"Writing {cmds.Count} CMDs to &3{Type.FullName}&r", DebugLogs);
         
         msg.Cmds = new string[cmds.Count];
         
@@ -187,7 +192,7 @@ public class EntityInfo
             var cmd = cmds[x];
             var name = LocalFullMemberName(cmd.Target.Name);
 
-            log.Debug($"Writing CMD &3{name}&r (index: {x})");
+            log.DebugIf($"Writing CMD &3{name}&r (index: {x})", DebugLogs);
             
             msg.Cmds[x] = name;
         }
@@ -195,7 +200,7 @@ public class EntityInfo
 
     internal void ReadCmds(Entity entity, EntitySpawnMessage msg)
     {
-        log.Debug($"Reading {msg.Cmds.Length} CMDs from &3{Type.FullName}&r (loaded: {cmds.Count})");
+        log.DebugIf($"Reading {msg.Cmds.Length} CMDs from &3{Type.FullName}&r (loaded: {cmds.Count})", DebugLogs);
         
         if (msg.Cmds.Length > 0 && cmds.Count < 1)
         {
@@ -208,7 +213,7 @@ public class EntityInfo
                 method.Index = (ushort)x;
                 method.RemoteName = cmd;
                 
-                log.Debug($"Found CMD &3{method.RemoteName}&r (index: {method.Index})");
+                log.DebugIf($"Found CMD &3{method.RemoteName}&r (index: {method.Index})", DebugLogs);
                 
                 cmds.Add(method);
             }
@@ -221,7 +226,7 @@ public class EntityInfo
     {
         if (rpcs.Count < 1)
         {
-            log.Debug($"Registering RPCs for entity &3{Type.FullName}&r");
+            log.DebugIf($"Registering RPCs for entity &3{Type.FullName}&r", DebugLogs);
             
             var list = ListPool<RemoteMethod>.Shared.Rent();
             var methods = Type.GetAllMethods();
@@ -240,7 +245,7 @@ public class EntityInfo
 
                 list.Add(remote);
                 
-                log.Debug($"Found RPC &3{method.Name}&r of &3{Type.FullName}&r");
+                log.DebugIf($"Found RPC &3{method.Name}&r of &3{Type.FullName}&r", DebugLogs);
             }
 
             var ordered = list.OrderBy(x => LocalFullMemberName(x.Target.Name));
@@ -250,7 +255,7 @@ public class EntityInfo
             {
                 method.Index = (ushort)index++;
                 
-                log.Debug($"Assigned index &1{method.Index}&r to RPC &3{method.Target.Name}&r of &3{Type.FullName}&r");
+                log.DebugIf($"Assigned index &1{method.Index}&r to RPC &3{method.Target.Name}&r of &3{Type.FullName}&r", DebugLogs);
 
                 rpcs.Add(method);
             }
@@ -259,7 +264,7 @@ public class EntityInfo
         }
         else
         {
-            log.Debug($"RPCs for entity &3{Type.FullName}&r already registered or none to register.");
+            log.DebugIf($"RPCs for entity &3{Type.FullName}&r already registered or none to register.", DebugLogs);
         }
     }
 
@@ -267,7 +272,7 @@ public class EntityInfo
     {
         if (cmds.Count < 1)
         {
-            log.Debug($"Registering CMDs for entity &3{Type.FullName}&r");
+            log.DebugIf($"Registering CMDs for entity &3{Type.FullName}&r", DebugLogs);
             
             var list = ListPool<RemoteMethod>.Shared.Rent();
             var methods = Type.GetAllMethods();
@@ -286,7 +291,7 @@ public class EntityInfo
 
                 list.Add(remote);
                 
-                log.Debug($"Found CMD &3{method.Name}&r of &3{Type.FullName}&r");
+                log.DebugIf($"Found CMD &3{method.Name}&r of &3{Type.FullName}&r", DebugLogs);
             }
 
             var ordered = list.OrderBy(x => LocalFullMemberName(x.Target.Name));
@@ -296,7 +301,7 @@ public class EntityInfo
             {
                 method.Index = (ushort)index++;
                 
-                log.Debug($"Assigned index &1{method.Index}&r to CMD &3{method.Target.Name}&r of &3{Type.FullName}&r");
+                log.DebugIf($"Assigned index &1{method.Index}&r to CMD &3{method.Target.Name}&r of &3{Type.FullName}&r", DebugLogs);
 
                 cmds.Add(method);
             }
@@ -305,7 +310,7 @@ public class EntityInfo
         }
         else
         {
-            log.Debug($"CMDs for entity &3{Type.FullName}&r already registered or none to register.");
+            log.DebugIf($"CMDs for entity &3{Type.FullName}&r already registered or none to register.", DebugLogs);
         }
     }
 
@@ -313,7 +318,7 @@ public class EntityInfo
     {
         if (syncVars.Count < 1)
         {
-            log.Debug($"Registering SyncVars for entity &3{Type.FullName}&r");
+            log.DebugIf($"Registering SyncVars for entity &3{Type.FullName}&r", DebugLogs);
             
             var list = ListPool<RemoteSyncVar>.Shared.Rent();
             var fields = Type.GetAllFields();
@@ -388,7 +393,7 @@ public class EntityInfo
                 remote.Reader = readerDelegate.Method;
                 remote.ReaderTarget = readerDelegate.Target;
                 
-                log.Debug($"Found SyncVar &3{field.Name}&r of &3{Type.FullName}&r");
+                log.DebugIf($"Found SyncVar &3{field.Name}&r of &3{Type.FullName}&r", DebugLogs);
                 
                 list.Add(remote);
             }
@@ -400,7 +405,7 @@ public class EntityInfo
             {
                 remoteSyncVar.Index = (ushort)index++;
 
-                log.Debug($"Assigned index &1{remoteSyncVar.Index}&r to SyncVar &3{remoteSyncVar.Field.Name}&r of &3{Type.FullName}&r");
+                log.DebugIf($"Assigned index &1{remoteSyncVar.Index}&r to SyncVar &3{remoteSyncVar.Field.Name}&r of &3{Type.FullName}&r", DebugLogs);
                 
                 syncVars.Add(remoteSyncVar);
             }
@@ -409,17 +414,17 @@ public class EntityInfo
         }
         else
         {
-            log.Debug($"SyncVars for entity &3{Type.FullName}&r already registered or none to register.");       
+            log.DebugIf($"SyncVars for entity &3{Type.FullName}&r already registered or none to register.", DebugLogs);       
         }
     }
 
     private void UpdateIndexFields(Entity entity)
     {
-        log.Debug($"Updating index fields for entity &3{Type.FullName}&r");
+        log.DebugIf($"Updating index fields for entity &3{Type.FullName}&r", DebugLogs);
 
         if (IndexFieldsBound)
         {
-            log.Debug($"Index fields for entity &3{Type.FullName}&r are already bound");
+            log.DebugIf($"Index fields for entity &3{Type.FullName}&r are already bound", DebugLogs);
             return;
         }
 
@@ -431,7 +436,7 @@ public class EntityInfo
         {
             var field = fields[i];
             
-            log.Debug($"Checking field &3{field.Name}&r");
+            log.DebugIf($"Checking field &3{field.Name}&r", DebugLogs);
 
             if (!field.HasAttribute<IndexFieldAttribute>(out var indexFieldAttribute))
                 continue;
@@ -466,7 +471,7 @@ public class EntityInfo
                 var cmdName = name.Substring(4);
                 var cmd = Cmds.FirstOrDefault(x => CompareRemoteMethod(cmdName, x));
                 
-                log.Debug($"Assigning CMD index &1{cmd?.Index ?? -1}&r to field &3{field.Name}&r (CMD &6{cmdName}&r)");
+                log.DebugIf($"Assigning CMD index &1{cmd?.Index ?? -1}&r to field &3{field.Name}&r (CMD &6{cmdName}&r)", DebugLogs);
                 
                 if (cmd != null)
                 {
@@ -482,7 +487,7 @@ public class EntityInfo
                 var rpcName = name.Substring(4);
                 var rpc = Rpcs.FirstOrDefault(x => CompareRemoteMethod(rpcName, x));
              
-                log.Debug($"Assigning RPC index &1{rpc?.Index ?? -1}&r to field &3{field.Name}&r (RPC &6{rpcName}&r)");
+                log.DebugIf($"Assigning RPC index &1{rpc?.Index ?? -1}&r to field &3{field.Name}&r (RPC &6{rpcName}&r)", DebugLogs);
                 
                 if (rpc != null)
                 {
@@ -498,7 +503,7 @@ public class EntityInfo
                 var syncVarName = name.Substring(8);
                 var syncVar = SyncVars.FirstOrDefault(x => string.Equals(x.Field.Name, syncVarName, StringComparison.OrdinalIgnoreCase));
 
-                log.Debug($"Assigning SyncVar index &1{syncVar?.Index ?? -1}&r to field &3{field.Name}&r (SyncVar &6{syncVarName}&r)");
+                log.DebugIf($"Assigning SyncVar index &1{syncVar?.Index ?? -1}&r to field &3{field.Name}&r (SyncVar &6{syncVarName}&r)", DebugLogs);
                 
                 if (syncVar == null)
                 {

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 
 using System.Net;
+using System.Net.Http;
 using System.Reflection;
 
 using NiveraAPI.Rest.Routes;
@@ -26,8 +27,7 @@ namespace NiveraAPI.Rest.Server
 
 		private volatile bool http;
 		private volatile bool https;
-
-		private volatile string prefix;
+		
 		private volatile string realIpHeader = "X-Real-IP";
 
 		private static Action queueUpdate;
@@ -37,6 +37,11 @@ namespace NiveraAPI.Rest.Server
 
 		private volatile ActionQueue queue = new();
 		private volatile ConcurrentDictionary<int, RestRoute> routes = new();
+		
+		/// <summary>
+		/// Whether the server should log debug information.
+		/// </summary>
+		public bool DebugLogs { get; set; }
 
 		/// <summary>
 		/// Gets the HTTP listener instance used to receive and process HTTP requests.
@@ -62,56 +67,6 @@ namespace NiveraAPI.Rest.Server
 		public IReadOnlyDictionary<int, RestRoute> Routes => routes;
 
 		/// <summary>
-		/// Gets or sets a value indicating whether the HTTP server should listen for HTTP traffic.
-		/// </summary>
-		/// <remarks>
-		/// When set to <c>true</c>, the server is configured to handle incoming HTTP requests.
-		/// This property must be enabled before starting the server if HTTP traffic is required.
-		/// If both HTTP and HTTPS are disabled, an exception will be thrown upon initialization.
-		/// </remarks>
-		public bool EnableHttp
-		{
-			get => http;
-			set => http = value;
-		}
-
-		/// <summary>
-		/// Gets or sets a value indicating whether the HTTP server should listen for HTTPS traffic.
-		/// </summary>
-		/// <remarks>
-		/// When set to <c>true</c>, the server is configured to handle incoming HTTPS requests.
-		/// This property must be enabled before starting the server if HTTPS traffic is required.
-		/// If both HTTP and HTTPS are disabled, an exception will be thrown upon initialization.
-		/// </remarks>
-		public bool EnableHttps
-		{
-			get => https;
-			set => https = value;
-		}
-
-		/// <summary>
-		/// Gets the HTTP URL prefix used by the server for handling HTTP requests.
-		/// </summary>
-		/// <remarks>
-		/// The <c>HttpPrefix</c> property generates the full HTTP URL prefix by combining the "http://" scheme
-		/// with the configured <c>Prefix</c> value, followed by a trailing slash ("/").
-		/// This property is primarily used internally to construct the base address for incoming HTTP connections,
-		/// ensuring that all requests are routed to the correct handler. The prefix is dynamically constructed
-		/// to reflect the current configuration of the server.
-		/// </remarks>
-		public string HttpPrefix => string.Concat("http://", prefix, "/");
-
-		/// <summary>
-		/// Gets the HTTPS URL prefix used by the server to listen for secure HTTPS connections.
-		/// </summary>
-		/// <remarks>
-		/// The <c>HttpsPrefix</c> property constructs and returns the full URL prefix for HTTPS connections
-		/// based on the server's configured <c>Prefix</c>. This is primarily used internally by the server
-		/// when enabling HTTPS functionality to define the base address for incoming secure requests.
-		/// </remarks>
-		public string HttpsPrefix => string.Concat("https://", prefix, "/");
-
-		/// <summary>
 		/// Indicates whether the HTTP server is currently active and listening for incoming requests.
 		/// </summary>
 		/// <remarks>
@@ -122,32 +77,9 @@ namespace NiveraAPI.Rest.Server
 		public bool IsListening => listener != null && listener.IsListening;
 
 		/// <summary>
-		/// Gets or sets the base prefix for the HTTP and HTTPS server URLs.
+		/// Gets or sets the base prefix.
 		/// </summary>
-		/// <remarks>
-		/// The <c>Prefix</c> property specifies the root URL path that the server will use to construct
-		/// the <see cref="HttpPrefix"/> and <see cref="HttpsPrefix"/> properties, which define the full
-		/// URL prefixes for HTTP and HTTPS, respectively. The value is automatically sanitized by removing
-		/// protocol declarations (e.g., "http://", "https://") and trailing slashes.
-		/// Setting this property to a null or empty value will throw an <see cref="ArgumentNullException"/>.
-		/// </remarks>
-		public string Prefix
-		{
-			get => prefix;
-			set
-			{
-				if (string.IsNullOrEmpty(value))
-					throw new ArgumentNullException(nameof(value));
-
-				value = value.Replace("http://", "")
-					.Replace("https://", "");
-
-				if (value.EndsWith("/"))
-					value = value.Substring(0, value.Length - 1);
-
-				prefix = value;
-			}
-		}
+		public string Prefix { get; set; }
 
 		/// <summary>
 		/// Gets or sets the name of the HTTP request header used to determine the client's real IP address.
@@ -173,17 +105,79 @@ namespace NiveraAPI.Rest.Server
 		/// <summary>
 		/// Represents an HTTP server that can manage and serve HTTP/HTTPS routes and handle synchronized events.
 		/// </summary>
-		public RestServer(string prefix, bool listenHttp, bool listenHttps)
+		public RestServer(string prefix)
 		{
-			if (!listenHttp && !listenHttps)
-				throw new("You must listen on HTTP or HTTPS");
-
-			log = LogManager.GetSource("HTTP", "Server");
-
+			if (string.IsNullOrEmpty(prefix))
+				throw new ArgumentNullException(nameof(prefix));
+			
+			log = LogManager.GetSource("Rest", "Server");
+			
 			Prefix = prefix;
+		}
+		
+		/// <summary>
+		/// Registers a handler for HTTP GET requests at the specified URL.
+		/// </summary>
+		/// <param name="url">The URL at which this handler will listen for HTTP GET requests.</param>
+		/// <param name="action">An action to execute when the specified URL is accessed via an HTTP GET request. This action receives a <c>RestServerContext</c> as its parameter.</param>
+		/// <returns>Returns <c>true</c> if the handler was successfully registered; otherwise, <c>false</c>.</returns>
+		public bool Get(string url, Action<RestServerContext> action)
+			=> Create(url, [HttpMethod.Get], action);
 
-			EnableHttp = listenHttp;
-			EnableHttps = listenHttps;
+		/// <summary>
+		/// Registers a handler for HTTP PUT requests at the specified URL.
+		/// </summary>
+		/// <param name="url">The URL pattern for which the PUT handler is to be registered.</param>
+		/// <param name="action">The action to execute when a request matches the specified URL.</param>
+		/// <returns>
+		/// True if the handler was successfully registered; otherwise, false.
+		/// </returns>
+		public bool Put(string url, Action<RestServerContext> action)
+			=> Create(url, [HttpMethod.Put], action);
+
+		/// <summary>
+		/// Registers a DELETE HTTP route with the given URL and action handler in the RestServer instance.
+		/// </summary>
+		/// <param name="url">The URL pattern to be associated with the DELETE HTTP method.</param>
+		/// <param name="action">The action to be executed when the route is accessed. This action accepts a <see cref="RestServerContext"/> instance for request and response handling.</param>
+		/// <returns>True if the route was successfully created; otherwise, false.</returns>
+		public bool Delete(string url, Action<RestServerContext> action)
+			=> Create(url, [HttpMethod.Delete], action);
+
+		/// <summary>
+		/// Adds a new route to the server for handling HTTP requests with the specified URL and methods.
+		/// </summary>
+		/// <param name="url">The relative URL of the route to be registered. Must start with '/'.</param>
+		/// <param name="methods">An array of HTTP methods to associate with the route (e.g., GET, PUT, DELETE).</param>
+		/// <param name="action">The action to execute when the route is accessed, represented as a delegate handling the <see cref="RestServerContext"/>.</param>
+		/// <returns>
+		/// Returns <c>true</c> if the route is successfully added; otherwise, <c>false</c> if a route already exists with the same URL and overlapping methods.
+		/// </returns>
+		/// <exception cref="ArgumentNullException">
+		/// Thrown when <paramref name="url"/> is null or empty, or when <paramref name="action"/> is null.
+		/// </exception>
+		public bool Create(string url, HttpMethod[] methods, Action<RestServerContext> action)
+		{
+			if (string.IsNullOrEmpty(url))
+				throw new ArgumentNullException(nameof(url));
+
+			if (action == null)
+				throw new ArgumentNullException(nameof(action));
+			
+			if (url[0] != '/') 
+				url = '/' + url;
+			
+			if (url[url.Length - 1] == '/') 
+				url = url.Substring(0, url.Length - 1);
+
+			if (routes.Any(kvp => kvp.Value.Url == url && kvp.Value.Methods.Any(methods.Contains)))
+				return false;
+
+			var id = Interlocked.Increment(ref this.id);
+			var route = new RestDynamicRoute(url, methods, action);
+			
+			routes.TryAdd(id, route);
+			return true;
 		}
 
 		/// <summary>
@@ -230,10 +224,10 @@ namespace NiveraAPI.Rest.Server
 		public int AddRoute(RestRoute route)
 		{
 			if (route == null)
-				throw new ArgumentNullException("route");
+				throw new ArgumentNullException(nameof(route));
 
 			if (string.IsNullOrWhiteSpace(route.Url))
-				throw new ArgumentNullException("Url");
+				throw new ArgumentNullException(nameof(route.Url));
 
 			route.FixedUrl = route.Url;
 
@@ -245,7 +239,7 @@ namespace NiveraAPI.Rest.Server
 				throw new(string.Concat("Another route with the same URL has already been registered (", route.Url, " / ", route.FixedUrl, ")"));
 			}
 
-			id++;
+			Interlocked.Increment(ref id);
 
 			routes.TryAdd(id, route);
 			return id;
@@ -259,7 +253,7 @@ namespace NiveraAPI.Rest.Server
 		public void AddRoutes(Assembly assembly)
 		{
 			if (assembly == null)
-				throw new ArgumentNullException("assembly");
+				throw new ArgumentNullException(nameof(assembly));
 
 			var types = assembly.GetTypes();
 
@@ -267,8 +261,7 @@ namespace NiveraAPI.Rest.Server
 			{
 				var type = types[i];
 
-				if (typeof(RestRoute).IsAssignableFrom(type)
-					&& Activator.CreateInstance(type) is RestRoute httpRoute)
+				if (typeof(RestRoute).IsAssignableFrom(type) && Activator.CreateInstance(type) is RestRoute httpRoute)
 				{
 					try
 					{
@@ -293,6 +286,33 @@ namespace NiveraAPI.Rest.Server
 		public void RemoveAllRoutes()
 		{
 			routes.Clear();
+		}
+
+		/// <summary>
+		/// Removes a route from the server based on the specified URL.
+		/// </summary>
+		/// <param name="url">The URL of the route to be removed. This must not be null or empty and should start with a forward slash.</param>
+		/// <returns>Returns <c>true</c> if the route was successfully removed; otherwise, <c>false</c> if no matching route was found.</returns>
+		/// <exception cref="ArgumentNullException">Thrown when the <paramref name="url"/> parameter is null or empty.</exception>
+		public bool RemoveRoute(string url)
+		{
+			if (string.IsNullOrEmpty(url))
+				throw new ArgumentNullException(nameof(url));
+
+			if (url[0] != '/') url = '/' + url;
+			if (url[url.Length - 1] == '/') url = url.Substring(0, url.Length - 1);
+
+			foreach (var kvp in routes)
+			{
+				if (kvp.Value is RestDynamicRoute restDynamicRoute
+				    && restDynamicRoute.Url == url)
+				{
+					routes.TryRemove(kvp.Key, out _);
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		/// <summary>
@@ -401,19 +421,11 @@ namespace NiveraAPI.Rest.Server
 		/// </exception>
 		public override void Start()
 		{
-			if (string.IsNullOrWhiteSpace(prefix))
+			if (string.IsNullOrWhiteSpace(Prefix))
 				throw new("You must provide a listening prefix");
 
-			if (!EnableHttp && !EnableHttps)
-				throw new("You must listen on HTTP or HTTPS");
-
 			listener = new();
-
-			if (EnableHttp)
-				listener.Prefixes.Add(HttpPrefix);
-
-			if (EnableHttps)
-				listener.Prefixes.Add(HttpsPrefix);
+			listener.Prefixes.Add(Prefix);
 
 			listener.Start();
 
@@ -471,8 +483,8 @@ namespace NiveraAPI.Rest.Server
 					if (context == null)
 						continue;
 
-					log.Debug(
-						$"RECV_CTX: {context.Request.RemoteEndPoint} ({context.Request.HttpMethod}) -> {context.Request.RawUrl}");
+					log.DebugIf(
+						$"Received: &3{context.Request.RemoteEndPoint}&r (&6{context.Request.HttpMethod}&r) -> &1{context.Request.RawUrl}&r", DebugLogs);
 
 					var rawUrl = context.Request.RawUrl;
 					var parameters = new ConcurrentDictionary<string, string>();

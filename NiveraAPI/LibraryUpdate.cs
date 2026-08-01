@@ -17,6 +17,11 @@ public static class LibraryUpdate
     private static float updateDelta = 0f;
     
     /// <summary>
+    /// Whether or not debug logs should be enabled.
+    /// </summary>
+    public static bool DebugLogs { get; set; }
+    
+    /// <summary>
     /// Gets the time elapsed since the last update, in seconds.
     /// </summary>
     public static float DeltaTime => updateDelta;
@@ -47,7 +52,7 @@ public static class LibraryUpdate
 
         Interlocked.CompareExchange(ref update, newUpdate, curUpdate);
         
-        log.Debug("Register", $"Added handler: &1{target.Method}&r");
+        log.DebugIf("Register", $"Added handler: &1{target.Method}&r", DebugLogs);
     }
 
     /// <summary>
@@ -75,7 +80,7 @@ public static class LibraryUpdate
             Interlocked.CompareExchange(ref update, null, curUpdate);
         }
 
-        log.Debug("Unregister", $"Removed handler: &1{target.Method}&r");
+        log.DebugIf("Unregister", $"Removed handler: &1{target.Method}&r", DebugLogs);
     }
 
     /// <summary>

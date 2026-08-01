@@ -37,6 +37,11 @@ public class DbUser : NetService
     public bool AttemptedAuth { get; private set; }
     
     /// <summary>
+    /// Whether or not to show debug logs.
+    /// </summary>
+    public bool DebugLogs { get; set; }
+    
+    /// <summary>
     /// The permissions of the user.
     /// </summary>
     public DbPerms Permissions { get; set; } = DbPerms.None;
@@ -179,7 +184,7 @@ public class DbUser : NetService
 
         Send(new DbResponseMessage(msg.Id, msg.UtcTicks, DateTime.UtcNow.Ticks,DbResult.Ok));
         
-        Log.Debug($"Added item &1{msg.Item}&r to table &1{msg.Table}&r");       
+        Log.DebugIf($"Added item &1{msg.Item}&r to table &1{msg.Table}&r", DebugLogs);       
     }
 
     private void UpdateItem(DbActionMessage msg)
@@ -233,7 +238,7 @@ public class DbUser : NetService
 
         Send(new DbResponseMessage(msg.Id, msg.UtcTicks, DateTime.UtcNow.Ticks,DbResult.Ok));       
         
-        Log.Debug($"Updated item &1{msg.Item}&r in table &1{msg.Table}&r");
+        Log.DebugIf($"Updated item &1{msg.Item}&r in table &1{msg.Table}&r", DebugLogs);
     }
 
     private void UpdateItemOrAddNew(DbActionMessage msg)
@@ -296,7 +301,7 @@ public class DbUser : NetService
 
         Send(new DbResponseMessage(msg.Id, msg.UtcTicks, DateTime.UtcNow.Ticks,DbResult.Ok));
         
-        Log.Debug($"Updated item &1{msg.Item}&r in table &1{msg.Table}&r");       
+        Log.DebugIf($"Updated item &1{msg.Item}&r in table &1{msg.Table}&r", DebugLogs);       
     }
 
     private void RemoveItem(DbActionMessage msg)
