@@ -14,6 +14,9 @@ namespace NiveraAPI.IO.Network.Entities;
 /// </summary>
 public class EntityInfo
 {
+    private static volatile MethodInfo readGenericMethod = typeof(ByteReader).FindMethod(m => m.Name == "Read" && m.IsGenericMethodDefinition);
+    private static volatile MethodInfo writeGenericMethod = typeof(ByteWriter).FindMethod(m => m.Name == "Write" && m.IsGenericMethodDefinition);
+    
     private static volatile LogSink log = LogManager.GetSource("Networking", "EntityInfo");
     private static volatile ConcurrentDictionary<Type, EntityInfo> infoCache = new();
 
@@ -235,14 +238,19 @@ public class EntityInfo
             {
                 var method = methods[x];
 
-                if (!IsValidMethod<ClientRpcAttribute>(method, Type, "ClientRpc", out var hasReturnValue))
+                if (!IsValidMethod<ClientRpcAttribute>(method, Type, "ClientRpc", 
+                        out var hasReturnValue, out var returnWriter, out var parameterReaders))
                     continue;
 
                 var remote = new RemoteMethod();
 
                 remote.Target = method;
+                remote.ReturnWriter = returnWriter;
                 remote.HasReturnValue = hasReturnValue;
+                remote.ParameterReaders = parameterReaders ?? [];
 
+                remote.IsBasic = parameterReaders == null;
+                
                 list.Add(remote);
                 
                 log.DebugIf($"Found RPC &3{method.Name}&r of &3{Type.FullName}&r", DebugLogs);
@@ -281,13 +289,18 @@ public class EntityInfo
             {
                 var method = methods[x];
 
-                if (!IsValidMethod<ServerCmdAttribute>(method, Type, "ServerCmd", out var hasReturnValue))
+                if (!IsValidMethod<ServerCmdAttribute>(method, Type, "ServerCmd", 
+                        out var hasReturnValue, out var returnWriter, out var parameterReaders))
                     continue;
 
                 var remote = new RemoteMethod();
 
                 remote.Target = method;
+                remote.ReturnWriter = returnWriter;
                 remote.HasReturnValue = hasReturnValue;
+                remote.ParameterReaders = parameterReaders ?? [];
+                
+                remote.IsBasic = parameterReaders == null;
 
                 list.Add(remote);
                 
@@ -547,10 +560,13 @@ public class EntityInfo
         return false;
     }
     
-    private bool IsValidMethod<T>(MethodInfo method, Type curType, string type, out bool hasReturnValue)
-        where T : Attribute
+    private bool IsValidMethod<T>(MethodInfo method, Type curType, string type, out bool hasReturnValue, 
+        out MethodInfo? returnWriter, out MethodInfo[]? parameterReaders) where T : Attribute
     {
         hasReturnValue = false;
+
+        returnWriter = null;
+        parameterReaders = null;
         
         if (!method.HasAttribute<T>(out var attribute))
             return false;
@@ -570,12 +586,6 @@ public class EntityInfo
         if (method.IsStatic)
         {
             log.Error($"{type}: &3{method.Name}&r of &3{curType.FullName}&r is static");
-            return false;
-        }
-
-        if (method.ReturnType != typeof(void))
-        {
-            log.Error($"{type}: &3{method.Name}&r of &3{curType.FullName}&r must return &3void&r");
             return false;
         }
             
@@ -600,13 +610,44 @@ public class EntityInfo
         //     return string.Concat(number, message);
         // }
 
-        if (parameters.Length != 2
-            || parameters[0].ParameterType != typeof(ByteReader)
-            || parameters[1].ParameterType != typeof(ByteWriter))
+        if (parameters.Length == 1 && parameters[0].ParameterType == typeof(ByteReader))
         {
-            log.Error(
-                $"{type}: &3{method.Name}&r of &3{curType.FullName}&r must have two parameters of type &3ByteReader&r and &3ByteWriter&r");
-            return false;
+            if (method.ReturnType != typeof(void))
+            {
+                hasReturnValue = true;
+                returnWriter = writeGenericMethod.MakeGenericMethod(method.ReturnType);
+            }
+            
+            return true;
+        }
+        
+        if (parameters.Length == 2 
+            && parameters[0].ParameterType == typeof(ByteReader)
+            && parameters[1].ParameterType == typeof(ByteWriter))
+        {
+            if (method.ReturnType != typeof(void))
+            {
+                log.Error($"{type}: &3{method.Name}&r of &3{curType.FullName}&r has a return type but is not marked as &3void&r");
+                return false;
+            }
+            
+            return true;
+        }
+
+        if (method.ReturnType != typeof(void))
+        {
+            hasReturnValue = true;
+            returnWriter = writeGenericMethod.MakeGenericMethod(method.ReturnType);
+        }
+        
+        parameterReaders = new MethodInfo[parameters.Length];
+
+        for (var x = 0; x < parameters.Length; x++)
+        {
+            var param = parameters[x];
+            var reader = readGenericMethod.MakeGenericMethod(param.ParameterType);
+
+            parameterReaders[x] = reader;
         }
         
         return true;

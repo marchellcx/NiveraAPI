@@ -241,7 +241,7 @@ public class StorageDirectory
         if (values.TryGetValue(name, out var value))
             return (StorageValue<T>)value;
         
-        Log.Debug($"Adding new storage value &1{name}&r ..", Manager.DebugLogs);
+        Log.Debug($"Adding new storage value &1{name}&r ..");
 
         var newValue = new StorageValue<T>() { armed = true };
         
@@ -253,7 +253,7 @@ public class StorageDirectory
         
         values.TryAdd(name, newValue);
         
-        Log.Debug($"Added new storage value &1{name}&r!", Manager.DebugLogs);
+        Log.Debug($"Added new storage value &1{name}&r!");
         return newValue;       
     }
 
@@ -296,7 +296,10 @@ public class StorageDirectory
         if (initialized)
             throw new InvalidOperationException("Storage directory has already been initialized.");
 
-        Log.Debug($"Initializing storage directory &1{name}&r ..", Manager.DebugLogs);
+        if (!Manager.DebugLogs)
+            Log.AllowedLogs &= ~LogLevel.Debug;
+        
+        Log.Debug($"Initializing storage directory &1{name}&r ..");
         
         if (!Directory.Exists(path))
             Directory.CreateDirectory(path);       
@@ -320,8 +323,8 @@ public class StorageDirectory
                 
                 var type = Type.GetType(data[0], true);
                 
-                Log.Debug($"Loaded storage value type: &1{type!.FullName}&r", Manager.DebugLogs);
-                Log.Debug($"Value JSON: &1{data[1]}&r", Manager.DebugLogs);
+                Log.Debug($"Loaded storage value type: &1{type!.FullName}&r");
+                Log.Debug($"Value JSON: &1{data[1]}&r");
                 
                 var value = JsonConvert.DeserializeObject(data[1], type);
 
@@ -333,7 +336,7 @@ public class StorageDirectory
                 
                 var valueType = typeof(StorageValue<>).MakeGenericType(value.GetType());
                 
-                Log.Debug($"Storage value type: &1{valueType}&r", Manager.DebugLogs);
+                Log.Debug($"Storage value type: &1{valueType}&r");
                 
                 var valueInstance = Activator.CreateInstance(valueType) as IStorageValue;
 
@@ -343,7 +346,7 @@ public class StorageDirectory
                     continue;
                 }
                 
-                Log.Debug($"Loaded storage value &1{name}&r from &3{file}&r ..", Manager.DebugLogs);
+                Log.Debug($"Loaded storage value &1{name}&r from &3{file}&r ..");
 
                 valueInstance.Name = name;
                 valueInstance.Path = file;
@@ -359,7 +362,7 @@ public class StorageDirectory
             }
         }
         
-        Log.Debug($"Initialized storage directory &1{name}&r!", Manager.DebugLogs);      
+        Log.Debug($"Initialized storage directory &1{name}&r!");      
         
         initialized = true;       
     }
@@ -377,7 +380,7 @@ public class StorageDirectory
                 if (!kvp.Value.IsDirty)
                     continue;
 
-                Log.Debug($"Saving dirty value &1{kvp.Key}&r ..", Manager.DebugLogs);
+                Log.Debug($"Saving dirty value &1{kvp.Key}&r ..");
 
                 var type = kvp.Value.Type;
                 var json = kvp.Value.Serialize();
@@ -387,8 +390,10 @@ public class StorageDirectory
                     type.AssemblyQualifiedName,
                     json
                 ]);
+
+                kvp.Value.IsDirty = false;
                 
-                Log.Debug($"Saved dirty value &1{kvp.Key}&r to &3{kvp.Value.Path}&r!", Manager.DebugLogs);
+                Log.Debug($"Saved dirty value &1{kvp.Key}&r to &3{kvp.Value.Path}&r!");
             }
             catch (Exception ex)
             {
@@ -407,16 +412,12 @@ public class StorageDirectory
     /// </remarks>
     public void SaveAll()
     {
-        Log.Debug($"Saving all values in directory &1{path}&r ..", Manager.DebugLogs);      
-        
-        using var writer = ByteWriter.Get();
+        Log.Debug($"Saving all values in directory &1{path}&r ..");      
         
         foreach (var kvp in values)
         {
             try
             {
-                writer.Reset();
-                
                 kvp.Value.IsDirty = false;
                 
                 var type = kvp.Value.Type;

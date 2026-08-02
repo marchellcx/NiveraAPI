@@ -2,7 +2,7 @@
 
 using System.Net;
 using System.Net.Sockets;
-
+using NiveraAPI.Console;
 using NiveraAPI.IO.Network.API.Internal;
 using NiveraAPI.IO.Network.API.Internal.Udp;
 using NiveraAPI.Logs;
@@ -41,6 +41,7 @@ public class NetServer : ServiceCollection
     internal volatile bool debugLogs;
     
     private volatile int connId = 0;
+    private volatile Predicate<TcpClient> tcpPredicate;
 
     private volatile ActionQueue queue = new();
     private volatile ConcurrentDictionary<int, NetConnection> conns = new();
@@ -87,7 +88,21 @@ public class NetServer : ServiceCollection
         get => debugLogs;
         set => debugLogs = value;
     }
-    
+
+    /// <summary>
+    /// Gets or sets a predicate that determines whether a TCP client connection is accepted.
+    /// </summary>
+    /// <remarks>
+    /// This property allows filtering incoming TCP client connections based on custom logic.
+    /// The assigned predicate must return true to accept the connection or false to reject it.
+    /// If set to null, an <see cref="ArgumentNullException"/> will be thrown.
+    /// </remarks>
+    public Predicate<TcpClient> TcpPredicate
+    {
+        get => tcpPredicate;
+        set => tcpPredicate = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
     /// <summary>
     /// Whether the server is currently using UDP for communication.
     /// </summary>
@@ -167,10 +182,13 @@ public class NetServer : ServiceCollection
             
             try
             {
-                kvp.Value.Stop();
+                if (kvp.Value.IsRunning)
+                {
+                    kvp.Value.Stop();
 
-                Disconnected?.Invoke(kvp.Value);
-                
+                    Disconnected?.Invoke(kvp.Value);
+                }
+
                 if (kvp.Value.tcpClient != null)
                 {
                     try
@@ -224,7 +242,8 @@ public class NetServer : ServiceCollection
     
     private void RemoveConnection(NetConnection conn)
     {
-        conns.TryRemove(conn.Id, out _);
+        if (!conns.TryRemove(conn.Id, out _))
+            return;
         
         queue.AddToQueue(() =>
         {
@@ -232,6 +251,13 @@ public class NetServer : ServiceCollection
             
             try
             {
+                if (conn.IsRunning)
+                {
+                    conn.Stop();
+                    
+                    Disconnected?.Invoke(conn);
+                }
+                
                 if (conn.tcpClient != null)
                 {
                     try
@@ -250,15 +276,11 @@ public class NetServer : ServiceCollection
                     conn.tcpRecvPipe?.Stop();
                     conn.tcpRecvPipe = null!;
                 }
-                
-                conn.Stop();
             }
             catch (Exception ex)
             {
                 log.Error(ex);
             }
-
-            Disconnected?.Invoke(conn);
         });
     }
     
@@ -450,6 +472,14 @@ public class NetServer : ServiceCollection
                 {
                     try
                     {
+                        if (tcpPredicate != null && !tcpPredicate(client))
+                        {
+                            client.Close();
+                            client.Dispose();
+                            
+                            return;
+                        }
+                        
                         client.NoDelay = true;
 
                         client.SendBufferSize = NetSettings.MTU;
@@ -457,9 +487,9 @@ public class NetServer : ServiceCollection
 
                         client.ExclusiveAddressUse = false;
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // ignored
+                         ConsoleOutput.Write($"Error while accepting client:\n{ex}", ConsoleColor.DarkRed);
                     }
 
                     queue.AddToQueue(() => TcpRegister(client));
@@ -598,7 +628,9 @@ public class NetServer : ServiceCollection
                     log.DebugIf($"Received {data.Reader.Count} bytes from {ip}", debugLogs);
 
                     if (conn == null)
+                    {
                         conn = UdpRegisterConnection(ip);
+                    }
 
                     conn.Receive(data.Reader);
                 }

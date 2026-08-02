@@ -309,6 +309,119 @@ public class Entity
         Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, data));
     }
 
+    /// <summary>
+    /// Sends a remote response to a specified remote index and optionally invokes a callback with the response.
+    /// </summary>
+    /// <typeparam name="TResponse">The type of the response expected from the remote call.</typeparam>
+    /// <param name="remoteIndex">The index of the remote method to invoke.</param>
+    /// <param name="callback">An optional callback action to handle the deserialized response.</param>
+    /// <exception cref="Exception">Thrown when the entity has no associated information, no remote methods, or the provided remote index is out of range.</exception>
+    public void SendRemoteResponse<TResponse>(ushort remoteIndex, Action<TResponse?>? callback = null)
+    {
+        if (Info == null)
+            throw new Exception("Entity has no info!");
+
+        var array = Manager.IsServer 
+            ? Info.Rpcs
+            : Info.Cmds;
+        
+        if (array == null)
+            throw new Exception("Entity has no RPCs / CMDs!");
+
+        if (remoteIndex >= array.Count)
+            throw new Exception("Remote index out of range!");
+
+        var id = (byte)(callback != null ? conversations.FindIndex(x => x == null) : byte.MaxValue);
+
+        if (id != byte.MaxValue)
+        {
+            conversations[id] = reader =>
+            {
+                callback(reader.Read<TResponse>());
+            };
+        }
+        
+        Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, null));
+    }
+
+    /// <summary>
+    /// Sends a request to a remote method and optionally receives a response asynchronously.
+    /// </summary>
+    /// <typeparam name="TData">The type of the data to be sent to the remote method.</typeparam>
+    /// <typeparam name="TResponse">The type of the response expected from the remote method.</typeparam>
+    /// <param name="remoteIndex">The index of the remote method to invoke.</param>
+    /// <param name="data">The data to send to the remote method. Defaults to <c>default</c> if not provided.</param>
+    /// <param name="callback">An optional callback action that handles the response. The response is of type <typeparamref name="TResponse"/>.</param>
+    /// <exception cref="Exception">Thrown if the entity does not contain necessary information, if the remote index is out of range, or if the entity's remote methods are not defined.</exception>
+    public void SendRemoteResponse<TData, TResponse>(ushort remoteIndex, TData? data = default,
+        Action<TResponse?>? callback = null)
+    {
+        if (Info == null)
+            throw new Exception("Entity has no info!");
+
+        var array = Manager.IsServer
+            ? Info.Rpcs
+            : Info.Cmds;
+        
+        if (array == null)
+            throw new Exception("Entity has no RPCs / CMDs!");
+
+        if (remoteIndex >= array.Count)
+            throw new Exception("Remote index out of range!");
+
+        var id = (byte)(callback != null ? conversations.FindIndex(x => x == null) : byte.MaxValue);
+
+        if (id != byte.MaxValue)
+        {
+            conversations[id] = reader =>
+            {
+                callback(reader.Read<TResponse>());
+            };
+        }
+
+        if (data != null)
+            Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, ByteWriter.GetArray(w => w.Write(data))));
+        else
+            Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, null));
+    }
+
+    /// <summary>
+    /// Sends a remote callback request with optional data and a callback function to be executed when a response is received.
+    /// </summary>
+    /// <param name="remoteIndex">The index of the remote method to be invoked.</param>
+    /// <param name="data">Optional data to send with the remote method invocation.</param>
+    /// <param name="callback">An optional callback function that will be executed upon receiving a response.</param>
+    /// <typeparam name="TData">The type of the data object being sent with the remote invocation.</typeparam>
+    /// <exception cref="Exception">
+    /// Thrown if the entity does not have associated information, the remote index is out of range, or the entity lacks RPCs or commands.
+    /// </exception>
+    public void SendRemoteCallback<TData>(ushort remoteIndex, TData? data = default,
+        Action<ByteReader?>? callback = null)
+    {
+        if (Info == null)
+            throw new Exception("Entity has no info!");
+
+        var array = Manager.IsServer
+            ? Info.Rpcs
+            : Info.Cmds;
+        
+        if (array == null)
+            throw new Exception("Entity has no RPCs / CMDs!");
+
+        if (remoteIndex >= array.Count)
+            throw new Exception("Remote index out of range!");
+
+        var id = (byte)(callback != null ? conversations.FindIndex(x => x == null) : byte.MaxValue);
+
+        if (id != byte.MaxValue)
+            conversations[id] = callback;
+        
+        if (data != null)
+            Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, ByteWriter.GetArray(w => w.Write(data))));
+        else
+            Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, null));
+    }
+
     internal void OnEntitySyncVarMessage(EntitySyncVarMessage msg)
     {
         if (msg.Index >= Info.SyncVars.Count)
@@ -407,30 +520,69 @@ public class Entity
 
             try
             {
-                if (invoke.HasReturnValue)
+                if (invoke.ParameterReaders?.Length > 0)
                 {
-                    using var writer = ByteWriter.Get();
-                    using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
-                    
-                    invoke.Target.Invoke(this, [reader, writer]);
+                    if (!invoke.HasReturnValue || invoke.ReturnWriter == null)
+                    {
+                        using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
 
-                    if (msg.Id != 255)
-                        Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1, writer.ToArray()));
+                        var args = new object[invoke.ParameterReaders.Length];
+
+                        for (var x = 0; x < invoke.ParameterReaders.Length; x++)
+                        {
+                            args[x] = invoke.ParameterReaders[x].Invoke(reader, null);
+                        }
+
+                        invoke.Target.Invoke(this, args);
+                    }
+                    else
+                    {
+                        using var writer = ByteWriter.Get();
+                        using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
+
+                        var args = new object[invoke.ParameterReaders.Length];
+
+                        for (var x = 0; x < invoke.ParameterReaders.Length; x++)
+                        {
+                            args[x] = invoke.ParameterReaders[x].Invoke(reader, null);
+                        }
+
+                        var result = invoke.Target.Invoke(this, args);
+
+                        invoke.ReturnWriter.Invoke(writer, [result]);
+
+                        if (msg.Id != 255)
+                            Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1, writer.ToArray()));
+                    }
                 }
                 else
                 {
-                    using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
-                    
-                    invoke.Target.Invoke(this, [reader, null]);
+                    if (invoke.HasReturnValue)
+                    {
+                        using var writer = ByteWriter.Get();
+                        using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
 
-                    if (msg.Id != 255)
-                        Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1));
+                        invoke.Target.Invoke(this, [reader, writer]);
+
+                        if (msg.Id != 255)
+                            Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1,
+                                writer.ToArray()));
+                    }
+                    else
+                    {
+                        using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
+
+                        invoke.Target.Invoke(this, [reader]);
+
+                        if (msg.Id != 255)
+                            Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1));
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Manager.Log.Error(ex);
-                
+
                 if (msg.Id != 255) // respond with no data to avoid deadlocks on remote
                     Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1));
             }
