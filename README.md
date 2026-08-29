@@ -1,5 +1,6 @@
 # NiveraAPI
-NiveraAPI is a dependency library that covers mostly all the things I may need in my projects - mostly works as a foundation for [PRTS](https://github.com/marchellcx/PRTS) and [LabExtended](https://github.com/marchellcx/LabExtended)
+NiveraAPI is a dependency library that covers mostly all the things I may need in my projects - mostly works as a foundation for [PRTS](https://github.com/marchellcx/PRTS) and [LabExtended](https://github.com/marchellcx/LabExtended)  
+There's also a Nivera.ScpSl project specifically for this reason - this plugin covers all integrations required for the library to work with SCP: Secret Laboratory servers.
 
 # Features
 You name it:  
