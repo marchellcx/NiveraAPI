@@ -1,4 +1,4 @@
-namespace NiveraAPI.Rest.Steam;
+namespace NiveraAPI.Steam.Auth;
 
 /// <summary>
 /// Represents potential errors that can occur during Steam authentication.

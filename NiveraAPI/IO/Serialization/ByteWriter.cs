@@ -596,7 +596,7 @@ namespace NiveraAPI.IO.Serialization
         /// </summary>
         public override void ReturnToPool()
         {
-            PoolBase<ByteWriter>.Shared.Return(this);
+            ObjectPool<ByteWriter>.Shared.Return(this);
         }
 
         private void AdjustSize(int requiredBytes)
@@ -620,7 +620,7 @@ namespace NiveraAPI.IO.Serialization
         /// </summary>
         /// <returns>An instance of <see cref="ByteWriter"/> from the shared pool.</returns>
         public static ByteWriter Get()
-            => PoolBase<ByteWriter>.Shared.Rent();
+            => ObjectPool<ByteWriter>.Shared.Rent();
 
         /// <summary>
         /// Retrieves a pooled <see cref="ByteWriter"/>, executes the provided action on it,

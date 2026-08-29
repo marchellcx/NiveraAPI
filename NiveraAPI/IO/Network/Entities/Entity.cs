@@ -353,8 +353,7 @@ public class Entity
     /// <param name="data">The data to send to the remote method. Defaults to <c>default</c> if not provided.</param>
     /// <param name="callback">An optional callback action that handles the response. The response is of type <typeparamref name="TResponse"/>.</param>
     /// <exception cref="Exception">Thrown if the entity does not contain necessary information, if the remote index is out of range, or if the entity's remote methods are not defined.</exception>
-    public void SendRemoteResponse<TData, TResponse>(ushort remoteIndex, TData? data = default,
-        Action<TResponse?>? callback = null)
+    public void SendRemoteResponse<TData, TResponse>(ushort remoteIndex, TData? data = default, Action<TResponse?>? callback = null)
     {
         if (Info == null)
             throw new Exception("Entity has no info!");
@@ -375,7 +374,14 @@ public class Entity
         {
             conversations[id] = reader =>
             {
-                callback(reader.Read<TResponse>());
+                if (reader != null)
+                {
+                    callback(reader.Read<TResponse>());
+                }
+                else
+                {
+                    callback(default);
+                }
             };
         }
 
@@ -395,8 +401,7 @@ public class Entity
     /// <exception cref="Exception">
     /// Thrown if the entity does not have associated information, the remote index is out of range, or the entity lacks RPCs or commands.
     /// </exception>
-    public void SendRemoteCallback<TData>(ushort remoteIndex, TData? data = default,
-        Action<ByteReader?>? callback = null)
+    public void SendRemoteCallback<TData>(ushort remoteIndex, TData? data = default, Action<ByteReader?>? callback = null)
     {
         if (Info == null)
             throw new Exception("Entity has no info!");
@@ -474,7 +479,7 @@ public class Entity
         {
             if (msg.Id == byte.MaxValue) // 255 is reserved for a null callback
             {
-                Manager.Log.Warn("RPC returned reply without a registered callback!");
+                Manager.Log.Warn("Returned reply without a registered callback!");
                 return;
             }
             
@@ -482,7 +487,7 @@ public class Entity
 
             if (callback == null)
             {
-                Manager.Log.Warn($"RPC returned reply with a null callback!");
+                Manager.Log.Warn("Returned reply with a null callback!");
                 return;
             }
             
@@ -492,9 +497,10 @@ public class Entity
             {
                 if (msg.Data?.Length > 0)
                 {
-                    using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
-                    
-                    callback(reader);
+                    using (var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length))
+                    {
+                        callback(reader);
+                    }
                 }
                 else
                 {
@@ -503,12 +509,14 @@ public class Entity
             }
             catch (Exception ex)
             {
-                Manager.Log.Error($"Failed to read RPC reply data:\n{ex}");
+                Manager.Log.Error($"Failed to read reply data:\n{ex}");
             }
         }
         else
         {
-            var array = msg.Rpc ? Info.Rpcs : Info.Cmds;
+            var array = msg.Rpc 
+                ? Info.Rpcs 
+                : Info.Cmds;
             
             if (msg.Index >= array.Count)
             {
@@ -520,63 +528,80 @@ public class Entity
 
             try
             {
-                if (invoke.ParameterReaders?.Length > 0)
+                if (invoke.IsReader)
                 {
-                    if (!invoke.HasReturnValue || invoke.ReturnWriter == null)
+                    if (invoke.HasReturnValue && invoke.ReturnWriter != null)
                     {
-                        using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
-
-                        var args = new object[invoke.ParameterReaders.Length];
-
-                        for (var x = 0; x < invoke.ParameterReaders.Length; x++)
+                        using (var writer = ByteWriter.Get())
+                        using (var reader = ByteReader.Get(msg.Data, 0, msg.Data.Length))
                         {
-                            args[x] = invoke.ParameterReaders[x].Invoke(reader, null);
+                            var result = invoke.Target.Invoke(this, [reader]);
+                            
+                            invoke.ReturnWriter.Invoke(writer, [result]);
+                            
+                            if (msg.Id != 255)
+                                Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1, writer.ToArray()));
                         }
-
-                        invoke.Target.Invoke(this, args);
                     }
                     else
                     {
-                        using var writer = ByteWriter.Get();
-                        using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
-
-                        var args = new object[invoke.ParameterReaders.Length];
-
-                        for (var x = 0; x < invoke.ParameterReaders.Length; x++)
-                        {
-                            args[x] = invoke.ParameterReaders[x].Invoke(reader, null);
-                        }
-
-                        var result = invoke.Target.Invoke(this, args);
-
-                        invoke.ReturnWriter.Invoke(writer, [result]);
-
-                        if (msg.Id != 255)
-                            Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1, writer.ToArray()));
-                    }
-                }
-                else
-                {
-                    if (invoke.HasReturnValue)
-                    {
-                        using var writer = ByteWriter.Get();
-                        using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
-
-                        invoke.Target.Invoke(this, [reader, writer]);
-
-                        if (msg.Id != 255)
-                            Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1,
-                                writer.ToArray()));
-                    }
-                    else
-                    {
-                        using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
-
-                        invoke.Target.Invoke(this, [reader]);
+                        using (var reader = ByteReader.Get(msg.Data, 0, msg.Data.Length))
+                            invoke.Target.Invoke(this, [reader]);
 
                         if (msg.Id != 255)
                             Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1));
                     }
+                }
+                else if (invoke.IsReaderWriter)
+                {
+                    using (var writer = ByteWriter.Get())
+                    using (var reader = ByteReader.Get(msg.Data, 0, msg.Data.Length))
+                    {
+                        invoke.Target.Invoke(this, [reader, writer]);
+                        
+                        if (msg.Id != 255)
+                            Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1, writer.ToArray()));
+                    }
+                }
+                else if (invoke.ParameterReaders?.Length > 0)
+                {
+                    if (invoke.HasReturnValue && invoke.ReturnWriter != null)
+                    {
+                        using (var writer = ByteWriter.Get())
+                        using (var reader = ByteReader.Get(msg.Data, 0, msg.Data.Length))
+                        {
+                            var args = new object[invoke.ParameterReaders.Length];
+                            
+                            for (var x = 0; x < invoke.ParameterReaders.Length; x++)
+                                args[x] = invoke.ParameterReaders[x].Invoke(reader, null);
+                            
+                            var result = invoke.Target.Invoke(this, args);
+                            
+                            invoke.ReturnWriter.Invoke(writer, [result]);
+                            
+                            if (msg.Id != 255)
+                                Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1, writer.ToArray()));
+                        }
+                    }
+                    else
+                    {
+                        using (var reader = ByteReader.Get(msg.Data, 0, msg.Data.Length))
+                        {
+                            var args = new object[invoke.ParameterReaders.Length];
+                            
+                            for (var x = 0; x < invoke.ParameterReaders.Length; x++)
+                                args[x] = invoke.ParameterReaders[x].Invoke(reader, null);
+                            
+                            invoke.Target.Invoke(this, args);
+                            
+                            if (msg.Id != 255)
+                                Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1));
+                        }
+                    }
+                }
+                else
+                {
+                    Manager.Log.Error($"Remote method contains an invalid signature: &1{invoke.Target}&r");
                 }
             }
             catch (Exception ex)

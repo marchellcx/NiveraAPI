@@ -58,7 +58,7 @@ public class PoolingSerializer<T> : IObjectSerializer, IDisposingSerializer
     /// </returns>
     public ISerializableObject Construct()
     {
-        return PoolBase<T>.Shared.Rent();
+        return ObjectPool<T>.Shared.Rent();
     }
 
     /// <summary>
@@ -100,6 +100,6 @@ public class PoolingSerializer<T> : IObjectSerializer, IDisposingSerializer
     /// <param name="obj">The object to dispose.</param>
     public void DisposeObject(ISerializableObject obj)
     {
-        PoolBase<T>.Shared.Return((T)obj);
+        ObjectPool<T>.Shared.Return((T)obj);
     }
 }

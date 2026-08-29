@@ -149,7 +149,7 @@ public abstract class ParameterParser
         value = default;
         exception = null;
 
-        var parameters = ListPool<ParameterDefinition>.Shared.Rent();
+        var parameters = ListObjectPool<ParameterDefinition>.Shared.Rent();
         
         parameters.Add(new(typeof(T), 0));
 
@@ -208,7 +208,7 @@ public abstract class ParameterParser
         if (string.IsNullOrEmpty(input))
             throw new ArgumentException("Cannot parse an empty string.", nameof(input));
 
-        var parameters = ListPool<ParameterDefinition>.Shared.Rent();
+        var parameters = ListObjectPool<ParameterDefinition>.Shared.Rent();
 
         parameters.Add(new(typeof(T), 0));
 
@@ -252,7 +252,7 @@ public abstract class ParameterParser
         if (string.IsNullOrEmpty(input))
             throw new ArgumentException("Cannot parse an empty string.", nameof(input));
 
-        var parameters = ListPool<ParameterDefinition>.Shared.Rent();
+        var parameters = ListObjectPool<ParameterDefinition>.Shared.Rent();
         
         parameters.Add(new(typeof(T), 0));
 
@@ -290,7 +290,7 @@ public abstract class ParameterParser
         if (parameters == null)
             throw new ArgumentNullException(nameof(parameters));
 
-        var tokens = ListPool<Token>.Shared.Rent();
+        var tokens = ListObjectPool<Token>.Shared.Rent();
 
         try
         {
@@ -352,7 +352,7 @@ public abstract class ParameterParser
         var tokenIndex = tokens.GetIndexedValue();
         var parameterIndex = parameters.GetIndexedValue();
         
-        var results = ListPool<ParameterResult>.Shared.Rent();
+        var results = ListObjectPool<ParameterResult>.Shared.Rent();
         var resultsIndex = results.GetIndexedValue();
 
         try
@@ -525,7 +525,7 @@ public abstract class ParameterParser
         {
             log.Error($"Error parsing tokens:\n{ex}");
 
-            ListPool<ParameterResult>.Shared.Return(results);
+            ListObjectPool<ParameterResult>.Shared.Return(results);
             return new(ParserError.Other, tokens, null, parameters);
         }
 

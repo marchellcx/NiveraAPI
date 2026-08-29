@@ -37,11 +37,11 @@ public class CollectionToken : Token, IConvertableToken
 
     /// <inheritdoc cref="Token.NewToken"/>
     public override Token NewToken()
-        => PoolBase<CollectionToken>.Shared.Rent();
+        => ObjectPool<CollectionToken>.Shared.Rent();
 
     /// <inheritdoc cref="Token.ReturnToken"/>
     public override void ReturnToken()
-        => PoolBase<CollectionToken>.Shared.Return(this);
+        => ObjectPool<CollectionToken>.Shared.Return(this);
 
     /// <inheritdoc cref="PoolResettable.OnPooled"/>
     public override void OnPooled()
@@ -81,7 +81,7 @@ public class CollectionToken : Token, IConvertableToken
 
         if (type == typeof(char[]))
         {
-            var list = ListPool<char>.Shared.Rent();
+            var list = ListObjectPool<char>.Shared.Rent();
 
             for (var i = 0; i < Values.Count; i++)
             {
@@ -93,7 +93,7 @@ public class CollectionToken : Token, IConvertableToken
                 }
             }
             
-            value = ListPool<char>.ReturnToArray(list);
+            value = ListObjectPool<char>.ReturnToArray(list);
             return true;
         }
 

@@ -1,13 +1,11 @@
 using System.Net.Http;
-
-using NiveraAPI.Logs;
-using NiveraAPI.Utilities;
 using NiveraAPI.Extensions;
-
+using NiveraAPI.Logs;
 using NiveraAPI.Rest.Routes;
 using NiveraAPI.Rest.Server;
+using NiveraAPI.Utilities;
 
-namespace NiveraAPI.Rest.Steam;
+namespace NiveraAPI.Steam.Auth;
 
 /// <summary>
 /// Represents a route for handling Steam authentication request callbacks.

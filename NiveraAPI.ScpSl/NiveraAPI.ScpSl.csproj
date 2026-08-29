@@ -1,0 +1,57 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net48</TargetFramework>
+        <LangVersion>preview</LangVersion>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+      <DebugSymbols>true</DebugSymbols>
+      <DebugType>embedded</DebugType>
+      <DocumentationFile>bin\Release\NiveraAPI.ScpSl.xml</DocumentationFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\NiveraAPI\NiveraAPI.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Reference Include="0LabExtended">
+        <HintPath>..\..\..\plugin_refs\0LabExtended.dll</HintPath>
+      </Reference>
+      <Reference Include="Assembly-CSharp">
+        <HintPath>..\..\..\refs\Assembly-CSharp-Publicized.dll</HintPath>
+      </Reference>
+      <Reference Include="Assembly-CSharp-firstpass">
+        <HintPath>..\..\..\refs\Assembly-CSharp-firstpass-Publicized.dll</HintPath>
+      </Reference>
+      <Reference Include="CommandSystem.Core">
+        <HintPath>..\..\..\refs\CommandSystem.Core.dll</HintPath>
+      </Reference>
+      <Reference Include="LabApi">
+        <HintPath>..\..\..\refs\LabApi-Publicized.dll</HintPath>
+      </Reference>
+      <Reference Include="NorthwoodLib">
+        <HintPath>..\..\..\refs\NorthwoodLib-Publicized.dll</HintPath>
+      </Reference>
+      <Reference Include="Pooling">
+        <HintPath>..\..\..\refs\Pooling-Publicized.dll</HintPath>
+      </Reference>
+      <Reference Include="Snake">
+        <HintPath>..\..\..\refs\Snake-Publicized.dll</HintPath>
+      </Reference>
+      <Reference Include="UnityEngine">
+        <HintPath>..\..\..\refs\UnityEngine.dll</HintPath>
+      </Reference>
+      <Reference Include="UnityEngine.CoreModule">
+        <HintPath>..\..\..\refs\UnityEngine.CoreModule.dll</HintPath>
+      </Reference>
+      <Reference Include="YamlDotNet">
+        <HintPath>..\..\..\refs\YamlDotNet.dll</HintPath>
+      </Reference>
+    </ItemGroup>
+
+</Project>

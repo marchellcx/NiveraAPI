@@ -607,7 +607,7 @@ namespace NiveraAPI.Extensions
 
             if (closeTagIndexes.Count > 0)
             {
-                var sb = StringBuilderPool.Shared.Rent();
+                var sb = StringBuilderObjectPool.Shared.Rent();
                 var previousIndex = 0;
 
                 foreach (int closeTagIndex in closeTagIndexes)
@@ -625,7 +625,7 @@ namespace NiveraAPI.Extensions
                 if (closeTagIndexes.Max() < text.Length)
                     sb.Append(text.Substring(closeTagIndexes.Max() + 1));
 
-                return StringBuilderPool.Shared.ReturnToString(sb);
+                return StringBuilderObjectPool.Shared.ReturnToString(sb);
             }
             else
             {
@@ -808,7 +808,7 @@ namespace NiveraAPI.Extensions
             if (string.IsNullOrWhiteSpace(input))
                 return input;
 
-            var builder = StringBuilderPool.Shared.Rent();
+            var builder = StringBuilderObjectPool.Shared.Rent();
 
             for (int i = 0; i < input.Length; i++)
             {
@@ -818,7 +818,7 @@ namespace NiveraAPI.Extensions
                     builder.Append(c);
             }
 
-            return StringBuilderPool.Shared.ReturnToString(builder);
+            return StringBuilderObjectPool.Shared.ReturnToString(builder);
         }
 
         /// <summary>
@@ -944,8 +944,8 @@ namespace NiveraAPI.Extensions
             if (source == null)
                 return Array.Empty<string>();
 
-            var result = ListPool<string>.Shared.Rent();
-            var currentItem = StringBuilderPool.Shared.Rent();
+            var result = ListObjectPool<string>.Shared.Rent();
+            var currentItem = StringBuilderObjectPool.Shared.Rent();
 
             var escapeFlag = false;
             var quotesOpen = false;
@@ -1005,8 +1005,8 @@ namespace NiveraAPI.Extensions
             if (!(string.IsNullOrEmpty(lastCurrentItemString) && ignoreEmptyResults))
                 result.Add(lastCurrentItemString);
 
-            StringBuilderPool.Shared.Return(currentItem);
-            return ListPool<string>.ReturnToArray(result);
+            StringBuilderObjectPool.Shared.Return(currentItem);
+            return ListObjectPool<string>.ReturnToArray(result);
         }
         
         /// <summary>
@@ -1102,7 +1102,7 @@ namespace NiveraAPI.Extensions
             if (str.Length <= 1)
                 return str;
 
-            var sb = StringBuilderPool.Shared.Rent();
+            var sb = StringBuilderObjectPool.Shared.Rent();
 
             sb.Append(char.ToLowerInvariant(str[0]));
 
@@ -1114,7 +1114,7 @@ namespace NiveraAPI.Extensions
                     sb.Append(str[i]);
             }
 
-            return StringBuilderPool.Shared.ReturnToString(sb);
+            return StringBuilderObjectPool.Shared.ReturnToString(sb);
         }
 
         /// <summary>

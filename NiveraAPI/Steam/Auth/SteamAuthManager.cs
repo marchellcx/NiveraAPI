@@ -1,12 +1,10 @@
 using System.Diagnostics;
 using NiveraAPI.Rest.Server;
-
 using NiveraAPI.Services;
 using NiveraAPI.Services.Interfaces;
-
 using NiveraAPI.Utilities;
 
-namespace NiveraAPI.Rest.Steam;
+namespace NiveraAPI.Steam.Auth;
 
 /// <summary>
 /// Manages Steam authentication sessions, including session creation, cancellation, and lifecycle management.

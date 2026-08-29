@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Net.Http;
+using NiveraAPI.Extensions;
 using NiveraAPI.Rest.Routes;
 using NiveraAPI.Rest.Server;
 using NiveraAPI.Services;

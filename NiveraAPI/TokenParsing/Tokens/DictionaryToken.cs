@@ -53,11 +53,11 @@ public class DictionaryToken : Token, IConvertableToken
 
     /// <inheritdoc cref="Token.NewToken"/>
     public override Token NewToken()
-        => PoolBase<DictionaryToken>.Shared.Rent();
+        => ObjectPool<DictionaryToken>.Shared.Rent();
 
     /// <inheritdoc cref="Token.ReturnToken"/>
     public override void ReturnToken()
-        => PoolBase<DictionaryToken>.Shared.Return(this);
+        => ObjectPool<DictionaryToken>.Shared.Return(this);
 
     /// <inheritdoc cref="PoolResettable.OnPooled"/>
     public override void OnPooled()

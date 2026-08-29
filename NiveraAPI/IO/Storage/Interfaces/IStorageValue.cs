@@ -1,6 +1,4 @@
-﻿using NiveraAPI.IO.Serialization;
-
-namespace NiveraAPI.IO.Storage.Interfaces;
+﻿namespace NiveraAPI.IO.Storage.Interfaces;
 
 /// <summary>
 /// Represents a storage value interface that defines properties and methods for managing storage data.
@@ -37,12 +35,6 @@ public interface IStorageValue
     /// </summary>
     /// <returns>A JSON string representing the serialized storage value.</returns>
     string Serialize();
-
-    /// <summary>
-    /// Deserializes the provided JSON string and populates the storage value with the data.
-    /// </summary>
-    /// <param name="json">The JSON string containing the data to be deserialized.</param>
-    void Deserialize(string json);
     
     /// <summary>
     /// Sets the value of the storage value.

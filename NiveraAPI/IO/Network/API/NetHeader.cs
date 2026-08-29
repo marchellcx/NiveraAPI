@@ -18,17 +18,5 @@ public enum NetHeader : byte
     /// <summary>
     /// Message packet.
     /// </summary>
-    Message,
-    
-    // UNUSED
-    
-    /// <summary>
-    /// Connect packet.
-    /// </summary>
-    Connect,
-    
-    /// <summary>
-    /// Disconnect packet.
-    /// </summary>
-    Disconnect
+    Message
 }

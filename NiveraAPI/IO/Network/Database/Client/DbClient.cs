@@ -515,7 +515,7 @@ public class DbClient : NetService
         if (!IsAuthenticated)
             throw new InvalidOperationException("Cannot create a transaction without being authenticated!");
         
-        var transaction = PoolBase<DbTrans>.Shared.Rent();
+        var transaction = ObjectPool<DbTrans>.Shared.Rent();
 
         transaction.TimeSent = DateTime.UtcNow;
 
@@ -578,7 +578,7 @@ public class DbClient : NetService
                 Log.Error("Stop", ex);
             }
 
-            PoolBase<DbTrans>.Shared.Return(t);
+            ObjectPool<DbTrans>.Shared.Return(t);
         });
         
         transactions.Clear();
@@ -633,7 +633,7 @@ public class DbClient : NetService
             {
                 if (t.IsTimedOut)
                 {
-                    PoolBase<DbTrans>.Shared.Return(t);
+                    ObjectPool<DbTrans>.Shared.Return(t);
                     return true;
                 }
 
@@ -747,6 +747,6 @@ public class DbClient : NetService
             Log.Error($"Failed to invoke callback of transaction &1{transaction.Id}&r:\n{ex}");
         }
         
-        PoolBase<DbTrans>.Shared.Return(transaction);
+        ObjectPool<DbTrans>.Shared.Return(transaction);
     }
 }

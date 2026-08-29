@@ -9,15 +9,15 @@ namespace NiveraAPI.Pooling;
 /// </summary>
 /// <typeparam name="TKey">The type of keys in the dictionaries managed by the pool.</typeparam>
 /// <typeparam name="TValue">The type of values in the dictionaries managed by the pool.</typeparam>
-public class DictionaryPool<TKey, TValue> : PoolBase<Dictionary<TKey, TValue>>
+public class DictionaryObjectPool<TKey, TValue> : ObjectPool<Dictionary<TKey, TValue>>
 {
-    static DictionaryPool()
+    static DictionaryObjectPool()
         => StaticConstructor<Dictionary<TKey, TValue>>.Set(() => new());
 
-    private static volatile DictionaryPool<TKey, TValue> shared;
+    private static volatile DictionaryObjectPool<TKey, TValue> shared;
 
     /// <summary>
-    /// Provides a singleton instance of the <see cref="DictionaryPool{TKey, TValue}"/> class,
+    /// Provides a singleton instance of the <see cref="DictionaryObjectPoolObjectPool{TKey,TValue}"/> class,
     /// ensuring thread-safe access to a shared dictionary pool for managing dictionaries of the specified types.
     /// </summary>
     /// <remarks>
@@ -25,9 +25,9 @@ public class DictionaryPool<TKey, TValue> : PoolBase<Dictionary<TKey, TValue>>
     /// across multiple operations, reducing the need for frequent memory allocations and collections.
     /// </remarks>
     /// <value>
-    /// A thread-safe, lazily-initialized instance of <see cref="DictionaryPool{TKey, TValue}"/>.
+    /// A thread-safe, lazily-initialized instance of <see cref="DictionaryObjectPoolObjectPool{TKey,TValue}"/>.
     /// </value>
-    public static new DictionaryPool<TKey, TValue> Shared => shared ??= new();
+    public static new DictionaryObjectPool<TKey, TValue> Shared => shared ??= new();
 
     /// <summary>
     /// Rents a dictionary from the pool and populates it with the contents of the specified dictionary.

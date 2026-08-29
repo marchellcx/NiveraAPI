@@ -91,8 +91,8 @@ namespace NiveraAPI.Utilities
                 throw new InvalidOperationException(
                     $"Cannot pick from list; it's chance sum is not equal to a hundred ({total}).");
 
-            var list = ListPool<T>.Shared.Rent(items);
-            var selected = ListPool<int>.Shared.Rent();
+            var list = ListObjectPool<T>.Shared.Rent(items);
+            var selected = ListObjectPool<int>.Shared.Rent();
 
             for (int i = 0; i < minCount; i++)
             {
@@ -104,8 +104,8 @@ namespace NiveraAPI.Utilities
                 array[i] = list[index];
             }
 
-            ListPool<int>.Shared.Return(selected);
-            ListPool<T>.Shared.Return(list);
+            ListObjectPool<int>.Shared.Return(selected);
+            ListObjectPool<T>.Shared.Return(list);
 
             return array;
         }
@@ -141,8 +141,8 @@ namespace NiveraAPI.Utilities
                 throw new InvalidOperationException(
                     $"Cannot pick from list; it's chance sum is not equal to a hundred ({total}).");
 
-            var list = ListPool<T>.Shared.Rent(items);
-            var selected = ListPool<int>.Shared.Rent();
+            var list = ListObjectPool<T>.Shared.Rent(items);
+            var selected = ListObjectPool<int>.Shared.Rent();
 
             for (int i = 0; i < minCount; i++)
             {
@@ -154,8 +154,8 @@ namespace NiveraAPI.Utilities
                 chosen.Add(list[index]);
             }
 
-            ListPool<int>.Shared.Return(selected);
-            ListPool<T>.Shared.Return(list);
+            ListObjectPool<int>.Shared.Return(selected);
+            ListObjectPool<T>.Shared.Return(list);
 
             return chosen;
         }
@@ -191,8 +191,8 @@ namespace NiveraAPI.Utilities
                 throw new InvalidOperationException(
                     $"Cannot pick from list; it's chance sum is not equal to a hundred ({total}).");
 
-            var list = ListPool<T>.Shared.Rent(items);
-            var selected = ListPool<int>.Shared.Rent();
+            var list = ListObjectPool<T>.Shared.Rent(items);
+            var selected = ListObjectPool<int>.Shared.Rent();
 
             for (int i = 0; i < minCount; i++)
             {
@@ -204,8 +204,8 @@ namespace NiveraAPI.Utilities
                 chosen.Add(list[index]);
             }
 
-            ListPool<int>.Shared.Return(selected);
-            ListPool<T>.Shared.Return(list);
+            ListObjectPool<int>.Shared.Return(selected);
+            ListObjectPool<T>.Shared.Return(list);
 
             return chosen;
         }
@@ -227,11 +227,11 @@ namespace NiveraAPI.Utilities
             if (items is null)
                 throw new ArgumentNullException(nameof(items));
 
-            var list = ListPool<T>.Shared.Rent(items);
+            var list = ListObjectPool<T>.Shared.Rent(items);
 
             if (list.Count < 0)
             {
-                ListPool<T>.Shared.Return(list);
+                ListObjectPool<T>.Shared.Return(list);
                 throw new ArgumentException($"Cannot pick from an empty list.");
             }
 
@@ -239,7 +239,7 @@ namespace NiveraAPI.Utilities
             {
                 var first = list[0];
 
-                ListPool<T>.Shared.Return(list);
+                ListObjectPool<T>.Shared.Return(list);
                 return first;
             }
 
@@ -247,14 +247,14 @@ namespace NiveraAPI.Utilities
 
             if (total != 100f && validateWeight)
             {
-                ListPool<T>.Shared.Return(list);
+                ListObjectPool<T>.Shared.Return(list);
                 throw new InvalidOperationException(
                     $"Cannot pick from list; it's chance sum is not equal to a hundred ({total}).");
             }
 
             var item = list[GetRandomIndex(total, list.Count, index => weightPicker(list[index]))];
 
-            ListPool<T>.Shared.Return(list);
+            ListObjectPool<T>.Shared.Return(list);
             return item;
         }
 

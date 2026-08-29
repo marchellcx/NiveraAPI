@@ -16,14 +16,14 @@ namespace NiveraAPI.Extensions
         /// <returns>A new array containing the elements of the base array followed by the elements of the specified arrays.</returns>
         public static T[] ConcatArray<T>(this T[] array, params T[][] items)
         {
-            var list = ListPool<T>.Shared.Rent(array);
+            var list = ListObjectPool<T>.Shared.Rent(array);
 
             for (var x = 0; x < items.Length; x++)
                 list.AddRange(items[x]);
             
             var newArray = list.ToArray();
             
-            ListPool<T>.Shared.Return(list);
+            ListObjectPool<T>.Shared.Return(list);
             return newArray;
         }
         

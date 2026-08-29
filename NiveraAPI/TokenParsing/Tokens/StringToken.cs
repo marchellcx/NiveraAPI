@@ -27,11 +27,11 @@ public class StringToken : Token, IConvertableToken
 
     /// <inheritdoc cref="Token.NewToken"/>
     public override Token NewToken()
-        => PoolBase<StringToken>.Shared.Rent();
+        => ObjectPool<StringToken>.Shared.Rent();
     
     /// <inheritdoc cref="Token.ReturnToken"/>
     public override void ReturnToken()
-        => PoolBase<StringToken>.Shared.Return(this);
+        => ObjectPool<StringToken>.Shared.Return(this);
     
     /// <inheritdoc/>
     public override void OnPooled()

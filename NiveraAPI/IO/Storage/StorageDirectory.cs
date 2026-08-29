@@ -2,10 +2,8 @@
 
 using Newtonsoft.Json;
 
-using NiveraAPI.IO.Serialization;
-using NiveraAPI.IO.Storage.Interfaces;
-
 using NiveraAPI.Logs;
+using NiveraAPI.IO.Storage.Interfaces;
 
 namespace NiveraAPI.IO.Storage;
 
@@ -23,6 +21,8 @@ public class StorageDirectory
     private volatile LogSink log;
     
     private volatile StorageManager manager;
+    private volatile StorageSerializer serializer;
+    
     private volatile ConcurrentDictionary<string, IStorageValue> values = new();
 
     /// <summary>
@@ -62,7 +62,7 @@ public class StorageDirectory
     /// <summary>
     /// Creates a new storage directory.
     /// </summary>
-    public StorageDirectory(string name, string path)
+    public StorageDirectory(string name, string path, StorageSerializer serializer)
     {
         if (string.IsNullOrEmpty(name))
             throw new ArgumentNullException(nameof(name));
@@ -72,6 +72,7 @@ public class StorageDirectory
         
         this.name = name;
         this.path = path;
+        this.serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
 
         this.log = LogManager.GetSource("StorageDirectory", name);
     }
@@ -241,7 +242,7 @@ public class StorageDirectory
         if (values.TryGetValue(name, out var value))
             return (StorageValue<T>)value;
         
-        Log.Debug($"Adding new storage value &1{name}&r ..");
+        Log.DebugIf($"Adding new storage value &1{name}&r ..", Manager.DebugLogs);
 
         var newValue = new StorageValue<T>() { armed = true };
         
@@ -253,7 +254,7 @@ public class StorageDirectory
         
         values.TryAdd(name, newValue);
         
-        Log.Debug($"Added new storage value &1{name}&r!");
+        Log.DebugIf($"Added new storage value &1{name}&r!", Manager.DebugLogs);
         return newValue;       
     }
 
@@ -295,11 +296,8 @@ public class StorageDirectory
     {
         if (initialized)
             throw new InvalidOperationException("Storage directory has already been initialized.");
-
-        if (!Manager.DebugLogs)
-            Log.AllowedLogs &= ~LogLevel.Debug;
         
-        Log.Debug($"Initializing storage directory &1{name}&r ..");
+        Log.DebugIf($"Initializing storage directory &1{name}&r ..", Manager.DebugLogs);
         
         if (!Directory.Exists(path))
             Directory.CreateDirectory(path);       
@@ -308,7 +306,7 @@ public class StorageDirectory
         {
             try
             {
-                Log.Debug($"Loading storage value from file &1{file}&r ..", true);
+                Log.DebugIf($"Loading storage value from file &1{file}&r ..", Manager.DebugLogs);
                 
                 var name = System.IO.Path.GetFileNameWithoutExtension(file);
                 var data = File.ReadAllLines(file);
@@ -323,21 +321,10 @@ public class StorageDirectory
                 
                 var type = Type.GetType(data[0], true);
                 
-                Log.Debug($"Loaded storage value type: &1{type!.FullName}&r");
-                Log.Debug($"Value JSON: &1{data[1]}&r");
+                Log.DebugIf($"Loaded storage value type: &1{type!.FullName}&r", Manager.DebugLogs);
+                Log.DebugIf($"Value data: &1{data[1]}&r", Manager.DebugLogs);
                 
-                var value = JsonConvert.DeserializeObject(data[1], type);
-
-                if (value == null)
-                {
-                    Log.Error($"Failed to deserialize storage value from file &1{file}&r.");
-                    continue;
-                }
-                
-                var valueType = typeof(StorageValue<>).MakeGenericType(value.GetType());
-                
-                Log.Debug($"Storage value type: &1{valueType}&r");
-                
+                var valueType = typeof(StorageValue<>).MakeGenericType(type);
                 var valueInstance = Activator.CreateInstance(valueType) as IStorageValue;
 
                 if (valueInstance == null)
@@ -346,13 +333,16 @@ public class StorageDirectory
                     continue;
                 }
                 
-                Log.Debug($"Loaded storage value &1{name}&r from &3{file}&r ..");
-
                 valueInstance.Name = name;
                 valueInstance.Path = file;
                 
                 valueInstance.Directory = this;
-                valueInstance.SetValue(value);
+
+                serializer.Deserialize(data[1], valueInstance);
+
+                valueInstance.IsDirty = false;
+                
+                Log.DebugIf($"Loaded storage value &1{name}&r from &3{file}&r ..", Manager.DebugLogs);
                 
                 values.TryAdd(name, valueInstance);
             }
@@ -362,7 +352,7 @@ public class StorageDirectory
             }
         }
         
-        Log.Debug($"Initialized storage directory &1{name}&r!");      
+        Log.DebugIf($"Initialized storage directory &1{name}&r!", Manager.DebugLogs);      
         
         initialized = true;       
     }
@@ -380,20 +370,20 @@ public class StorageDirectory
                 if (!kvp.Value.IsDirty)
                     continue;
 
-                Log.Debug($"Saving dirty value &1{kvp.Key}&r ..");
+                Log.DebugIf($"Saving dirty value &1{kvp.Key}&r ..", Manager.DebugLogs);
 
                 var type = kvp.Value.Type;
-                var json = kvp.Value.Serialize();
+                var data = serializer.Serialize(kvp.Value);
                 
                 File.WriteAllLines(kvp.Value.Path, 
                 [
                     type.AssemblyQualifiedName,
-                    json
+                    data
                 ]);
 
                 kvp.Value.IsDirty = false;
                 
-                Log.Debug($"Saved dirty value &1{kvp.Key}&r to &3{kvp.Value.Path}&r!");
+                Log.DebugIf($"Saved dirty value &1{kvp.Key}&r to &3{kvp.Value.Path}&r!", Manager.DebugLogs);
             }
             catch (Exception ex)
             {
@@ -412,7 +402,7 @@ public class StorageDirectory
     /// </remarks>
     public void SaveAll()
     {
-        Log.Debug($"Saving all values in directory &1{path}&r ..");      
+        Log.DebugIf($"Saving all values in directory &1{path}&r ..", Manager.DebugLogs);      
         
         foreach (var kvp in values)
         {
@@ -421,12 +411,12 @@ public class StorageDirectory
                 kvp.Value.IsDirty = false;
                 
                 var type = kvp.Value.Type;
-                var json = kvp.Value.Serialize();
+                var data = serializer.Serialize(kvp.Value);
                 
                 File.WriteAllLines(kvp.Value.Path, 
                 [
                     type.AssemblyQualifiedName,
-                    json
+                    data
                 ]);
             }
             catch (Exception ex)

@@ -552,7 +552,7 @@ namespace NiveraAPI.IO.Serialization
         /// Implementations should ensure that the object is properly prepared for its next usage and does not retain any stale references or data.
         /// </remarks>
         public override void ReturnToPool()
-            => PoolBase<ByteReader>.Shared.Return(this);
+            => ObjectPool<ByteReader>.Shared.Return(this);
 
         private void ThrowIfEnd(int requiredBytes)
         {
@@ -588,7 +588,7 @@ namespace NiveraAPI.IO.Serialization
                 thrown = ex;
             }
 
-            PoolBase<ByteReader>.Shared.Return(reader);
+            ObjectPool<ByteReader>.Shared.Return(reader);
 
             if (thrown != null)
                 throw thrown;
@@ -618,7 +618,7 @@ namespace NiveraAPI.IO.Serialization
                 thrown = ex;
             }
 
-            PoolBase<ByteReader>.Shared.Return(reader);
+            ObjectPool<ByteReader>.Shared.Return(reader);
 
             if (thrown != null)
                 throw thrown;
@@ -633,7 +633,7 @@ namespace NiveraAPI.IO.Serialization
         /// <returns>An initialized <see cref="ByteReader"/> instance.</returns>
         public static ByteReader Get(byte[] buffer, int offset, int count)
         {
-            var reader = PoolBase<ByteReader>.Shared.Rent();
+            var reader = ObjectPool<ByteReader>.Shared.Rent();
 
             reader.Reset(buffer, offset, count);
             return reader;
@@ -646,7 +646,7 @@ namespace NiveraAPI.IO.Serialization
         /// <returns>An initialized <see cref="ByteReader"/> instance.</returns>
         public static ByteReader Get(ArraySegment<byte> buffer)
         {
-            var reader = PoolBase<ByteReader>.Shared.Rent();
+            var reader = ObjectPool<ByteReader>.Shared.Rent();
 
             reader.Reset(buffer);
             return reader;

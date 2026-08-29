@@ -15,6 +15,9 @@ public class StorageManager
     private volatile bool initialized;
     
     private volatile string path;
+
+    private volatile LogSink log;
+    private volatile StorageSerializer defaultSerializer;
     private volatile ConcurrentDictionary<string, StorageDirectory> dirs = new();
 
     /// <summary>
@@ -37,6 +40,30 @@ public class StorageManager
     }
 
     /// <summary>
+    /// Gets the logging mechanism associated with the storage manager.
+    /// </summary>
+    public LogSink Log => log;
+
+    /// <summary>
+    /// Gets or sets the default serializer used for handling
+    /// serialization and deserialization of storage values within the storage manager.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when an attempt is made to set this property to a null value.
+    /// </exception>
+    public StorageSerializer DefaultSerializer
+    {
+        get => defaultSerializer;
+        set => defaultSerializer = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
+    /// <summary>
+    /// Gets the collection of <see cref="StorageSerializer"/> objects associated with the storage manager.
+    /// Each serializer provides functionality for serializing and deserializing storage values within the managed directories.
+    /// </summary>
+    public ConcurrentDictionary<string, StorageSerializer> DirectorySerializers { get; } = new();
+
+    /// <summary>
     /// Gets the directories in the storage manager.
     /// </summary>
     public IReadOnlyDictionary<string, StorageDirectory> Directories => dirs;
@@ -50,6 +77,7 @@ public class StorageManager
             throw new ArgumentNullException(nameof(path));
         
         this.path = path;
+        this.log = LogManager.GetSource("StorageManager", System.IO.Path.GetFileName(path));
     }
 
     /// <summary>
@@ -73,23 +101,27 @@ public class StorageManager
 
         try
         {
-            Log.Debug($"Initializing storage in &1{path}&r ..", DebugLogs);
+            Log.DebugIf($"Initializing storage in &1{path}&r ..", DebugLogs);
             
             foreach (var dir in Directory.GetDirectories(path))
             {
                 try
                 {
-                    Log.Debug($"Loading directory &1{dir}&r ..", DebugLogs);
+                    Log.DebugIf($"Loading directory &1{dir}&r ..", DebugLogs);
                     
                     var name = System.IO.Path.GetFileName(dir);
-                    var directory = new StorageDirectory(name, dir);
+
+                    if (!DirectorySerializers.TryGetValue(name, out var serializer))
+                        serializer = defaultSerializer;
+                        
+                    var directory = new StorageDirectory(name, dir, serializer);
 
                     directory.Manager = this;
                     directory.Initialize();
                     
                     dirs.TryAdd(name, directory);
                     
-                    Log.Debug($"Directory &1{name}&r loaded successfully.", DebugLogs);
+                    Log.DebugIf($"Directory &1{name}&r loaded successfully.", DebugLogs);
                 }
                 catch (Exception ex)
                 {
@@ -117,13 +149,13 @@ public class StorageManager
     /// </exception>
     public void SaveAll()
     {
-        Log.Debug($"Saving all files in storage &1{Path}&r ..", DebugLogs);
+        Log.DebugIf($"Saving all files in storage &1{Path}&r ..", DebugLogs);
         
         foreach (var kvp in dirs)
         {
             try
             {
-                Log.Debug($"Saving files in directory &1{kvp.Key}&r ..", DebugLogs);
+                Log.DebugIf($"Saving files in directory &1{kvp.Key}&r ..", DebugLogs);
                 
                 kvp.Value.SaveAll();
             }
@@ -211,9 +243,12 @@ public class StorageManager
         if (dirs.TryGetValue(name, out var dir))
             return dir;
 
-        Log.Debug($"Creating a new directory: &1{name}&r", DebugLogs);
+        Log.DebugIf($"Creating a new directory: &1{name}&r", DebugLogs);
+
+        if (!DirectorySerializers.TryGetValue(name, out var serializer))
+            serializer = defaultSerializer;
         
-        dir = new StorageDirectory(name, System.IO.Path.Combine(path, name));
+        dir = new StorageDirectory(name, System.IO.Path.Combine(path, name), serializer);
         dir.Manager = this;
         
         try
@@ -249,7 +284,7 @@ public class StorageManager
         if (string.IsNullOrEmpty(name))
             throw new ArgumentNullException(nameof(name));
 
-        Log.Debug($"Removing directory &1{name}&r ..", DebugLogs);
+        Log.DebugIf($"Removing directory &1{name}&r ..", DebugLogs);
         
         if (!dirs.TryRemove(name, out var dir))
             return false;
@@ -276,7 +311,7 @@ public class StorageManager
     /// </param>
     public void RemoveAll(bool deleteFiles = false)
     {
-        Log.Debug($"Removing all directories ..", DebugLogs);
+        Log.DebugIf("Removing all directories ..", DebugLogs);
         
         foreach (var kvp in dirs)
         {

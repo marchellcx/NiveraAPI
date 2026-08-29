@@ -231,7 +231,7 @@ public class EntityInfo
         {
             log.DebugIf($"Registering RPCs for entity &3{Type.FullName}&r", DebugLogs);
             
-            var list = ListPool<RemoteMethod>.Shared.Rent();
+            var list = ListObjectPool<RemoteMethod>.Shared.Rent();
             var methods = Type.GetAllMethods();
 
             for (var x = 0; x < methods.Length; x++)
@@ -243,13 +243,15 @@ public class EntityInfo
                     continue;
 
                 var remote = new RemoteMethod();
+                var param = method.GetAllParameters();
 
                 remote.Target = method;
                 remote.ReturnWriter = returnWriter;
                 remote.HasReturnValue = hasReturnValue;
                 remote.ParameterReaders = parameterReaders ?? [];
-
-                remote.IsBasic = parameterReaders == null;
+                
+                remote.IsReader = param.Length == 1 && param[0].ParameterType == typeof(ByteReader);
+                remote.IsReaderWriter = param.Length == 2 && param[0].ParameterType == typeof(ByteReader) && param[1].ParameterType == typeof(ByteWriter);
                 
                 list.Add(remote);
                 
@@ -268,7 +270,7 @@ public class EntityInfo
                 rpcs.Add(method);
             }
 
-            ListPool<RemoteMethod>.Shared.Return(list);
+            ListObjectPool<RemoteMethod>.Shared.Return(list);
         }
         else
         {
@@ -282,7 +284,7 @@ public class EntityInfo
         {
             log.DebugIf($"Registering CMDs for entity &3{Type.FullName}&r", DebugLogs);
             
-            var list = ListPool<RemoteMethod>.Shared.Rent();
+            var list = ListObjectPool<RemoteMethod>.Shared.Rent();
             var methods = Type.GetAllMethods();
 
             for (var x = 0; x < methods.Length; x++)
@@ -294,13 +296,15 @@ public class EntityInfo
                     continue;
 
                 var remote = new RemoteMethod();
+                var param = method.GetAllParameters();
 
                 remote.Target = method;
                 remote.ReturnWriter = returnWriter;
                 remote.HasReturnValue = hasReturnValue;
                 remote.ParameterReaders = parameterReaders ?? [];
-                
-                remote.IsBasic = parameterReaders == null;
+
+                remote.IsReader = param.Length == 1 && param[0].ParameterType == typeof(ByteReader);
+                remote.IsReaderWriter = param.Length == 2 && param[0].ParameterType == typeof(ByteReader) && param[1].ParameterType == typeof(ByteWriter);
 
                 list.Add(remote);
                 
@@ -319,7 +323,7 @@ public class EntityInfo
                 cmds.Add(method);
             }
 
-            ListPool<RemoteMethod>.Shared.Return(list);
+            ListObjectPool<RemoteMethod>.Shared.Return(list);
         }
         else
         {
@@ -333,7 +337,7 @@ public class EntityInfo
         {
             log.DebugIf($"Registering SyncVars for entity &3{Type.FullName}&r", DebugLogs);
             
-            var list = ListPool<RemoteSyncVar>.Shared.Rent();
+            var list = ListObjectPool<RemoteSyncVar>.Shared.Rent();
             var fields = Type.GetAllFields();
 
             for (var x = 0; x < fields.Length; x++)
@@ -423,7 +427,7 @@ public class EntityInfo
                 syncVars.Add(remoteSyncVar);
             }
             
-            ListPool<RemoteSyncVar>.Shared.Return(list);
+            ListObjectPool<RemoteSyncVar>.Shared.Return(list);
         }
         else
         {
@@ -590,25 +594,6 @@ public class EntityInfo
         }
             
         var parameters = method.GetAllParameters();
-        
-        // parsing parameters via reflection would be too slow so we'll directly provide the received data instead
-        // users then can create helper methods to invoke
-        
-        // [ClientRpc(true)] // true = HasReturnValue
-        // private void GetMessageRpc(ByteReader reader, ByteWriter writer)
-        // {
-        //     var number = reader.ReadUInt16();
-        //     var message = reader.ReadString();
-        //  
-        //     var result = GetMessage(number, message);
-        //
-        //     writer.WriteString(result);
-        // }
-        
-        // public string GetMessage(int number, string message)
-        // {
-        //     return string.Concat(number, message);
-        // }
 
         if (parameters.Length == 1 && parameters[0].ParameterType == typeof(ByteReader))
         {

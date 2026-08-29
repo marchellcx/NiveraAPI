@@ -60,7 +60,7 @@ public class TcpClientSendPipe
         }
         catch (Exception ex)
         {
-            netClient.TcpOnSendPipeError(ex);
+            netClient.OnSendPipeError(ex);
         }
     }
 
@@ -71,11 +71,11 @@ public class TcpClientSendPipe
     {
         stopSignal = true;
         
-        netClient.Log.DebugIf("TcpClientSendPipe", $"Stopping ..", netClient.DebugLogs);
+        netClient.Log.DebugIf("TcpClientSendPipe", "Stopping ..", netClient.DebugLogs);
 
         try
         {
-            netClient.Log.DebugIf("TcpClientSendPipe", $"Disposing stream ..", netClient.DebugLogs);
+            netClient.Log.DebugIf("TcpClientSendPipe", "Disposing stream ..", netClient.DebugLogs);
             
             if (netStream != null)
             {
@@ -89,7 +89,7 @@ public class TcpClientSendPipe
             // ignored
         }
         
-        netClient.Log.DebugIf("TcpClientSendPipe", $"Clearing queues ..", netClient.DebugLogs);
+        netClient.Log.DebugIf("TcpClientSendPipe", "Clearing queues ..", netClient.DebugLogs);
         
         while (pool.TryDequeue(out var writer))
             writer.ReturnToPool();
@@ -118,6 +118,19 @@ public class TcpClientSendPipe
         
         writer.Buffer = new byte[NetSettings.MTU];
         return writer;
+    }
+
+    /// <summary>
+    /// Returns a previously used <see cref="ByteWriter"/> instance to the internal queue for reuse.
+    /// </summary>
+    /// <param name="writer">The <see cref="ByteWriter"/> instance to be returned to the queue.</param>
+    /// <exception cref="ArgumentNullException">Thrown when the provided <paramref name="writer"/> is null.</exception>
+    public void ReturnWriter(ByteWriter writer)
+    {
+        if (writer == null)
+            throw new ArgumentNullException(nameof(writer));
+        
+        queue.Enqueue(writer);
     }
     
     /// <summary>
@@ -173,7 +186,7 @@ public class TcpClientSendPipe
                 }
                 catch (Exception ex)
                 {
-                    netClient.TcpOnSendPipeError(ex);
+                    netClient.OnSendPipeError(ex);
                     
                     stopSignal = true;
                 }

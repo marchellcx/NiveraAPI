@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using NiveraAPI.Pooling;
 using NiveraAPI.Services.Interfaces;
 
 namespace NiveraAPI.Services;
@@ -104,8 +105,12 @@ public class ServiceCollection : IServiceCollection
         service = Activator.CreateInstance(serviceType, arguments) as IService;
 
         if (service != null)
-            return AddService(service) ? service : null;
-        
+        {
+            return AddService(service)
+                ? service
+                : null;
+        }
+
         return null;
     }
 
@@ -195,21 +200,34 @@ public class ServiceCollection : IServiceCollection
     /// <summary>
     /// Stops all services within the collection that are currently running.
     /// </summary>
-    public void StopAllServices()
+    public void StopAllServices(bool force)
     {
+        var exceptions = ListObjectPool<Exception>.Shared.Rent();
+        
         foreach (var kvp in services)
         {
             try
             {
-                if (kvp.Value.IsRunning)
+                if (kvp.Value.IsRunning || force)
                 {
                     kvp.Value.Stop();
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // ignored
+                exceptions.Add(ex);
             }
+        }
+
+        if (exceptions.Count > 0)
+        {
+            ListObjectPool<Exception>.Shared.Return(exceptions);
+            
+            throw new AggregateException("Failed to stop services", exceptions);
+        }
+        else
+        {
+            ListObjectPool<Exception>.Shared.Return(exceptions);
         }
     }
 

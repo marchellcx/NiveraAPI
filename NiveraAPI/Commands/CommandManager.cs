@@ -889,10 +889,10 @@ public class CommandManager<TSender> where TSender : class
             Failed?.Invoke(context, resCopy);
             
             if (resCopy.Tokens != null)
-                ListPool<Token>.Shared.Return(resCopy.Tokens);
+                ListObjectPool<Token>.Shared.Return(resCopy.Tokens);
                 
             if (resCopy.ParsedArgs.HasValue && resCopy.ParsedArgs.Value.Results != null)
-                ListPool<ParameterResult>.Shared.Return(resCopy.ParsedArgs.Value.Results);
+                ListObjectPool<ParameterResult>.Shared.Return(resCopy.ParsedArgs.Value.Results);
             
             if (overloadArgs != null && resCopy.Overload != null)
                 resCopy.Overload.ArgsPool.Return(overloadArgs);
@@ -1052,10 +1052,10 @@ public class CommandManager<TSender> where TSender : class
                 callback?.Invoke(context);
                 
                 if (resCopy.Tokens != null)
-                    ListPool<Token>.Shared.Return(resCopy.Tokens);
+                    ListObjectPool<Token>.Shared.Return(resCopy.Tokens);
                 
                 if (resCopy.ParsedArgs is { Results: not null })
-                    ListPool<ParameterResult>.Shared.Return(resCopy.ParsedArgs.Value.Results!);
+                    ListObjectPool<ParameterResult>.Shared.Return(resCopy.ParsedArgs.Value.Results!);
 
                 Awaited?.Invoke(context, resCopy, awaiter);
 
@@ -1108,7 +1108,7 @@ public class CommandManager<TSender> where TSender : class
                 string.Empty, null, null);
         }
         
-        var possible = ListPool<CommandOverload<TSender>>.Shared.Rent();
+        var possible = ListObjectPool<CommandOverload<TSender>>.Shared.Rent();
 
         foreach (var command in commands)
         {
@@ -1211,7 +1211,7 @@ public class CommandManager<TSender> where TSender : class
 
                     if (overload.NoContextParameterCount > 0)
                     {
-                        var tokens = ListPool<Token>.Shared.Rent();
+                        var tokens = ListObjectPool<Token>.Shared.Rent();
 
                         if (CMD_DEBUG)
                             log.Debug($"Parsing parameters, args query: &3{args}&r");
@@ -1227,7 +1227,7 @@ public class CommandManager<TSender> where TSender : class
                         {
                             log.Error($"Parsing arguments failed: &1{ex}&r");
 
-                            ListPool<Token>.Shared.Return(tokens);
+                            ListObjectPool<Token>.Shared.Return(tokens);
                             continue;
                         }
 
@@ -1236,7 +1236,7 @@ public class CommandManager<TSender> where TSender : class
                             if (CMD_DEBUG)
                                 log.Debug("No tokens were parsed");
 
-                            ListPool<Token>.Shared.Return(tokens);
+                            ListObjectPool<Token>.Shared.Return(tokens);
                             continue;
                         }
 
@@ -1260,7 +1260,7 @@ public class CommandManager<TSender> where TSender : class
                             if (CMD_DEBUG)
                                 log.Debug($"Parameter parsing failed: &1{parser.Error?.ToString() ?? "(null)"}&r");
 
-                            ListPool<Token>.Shared.Return(tokens);
+                            ListObjectPool<Token>.Shared.Return(tokens);
                             continue;
                         }
 
@@ -1281,7 +1281,7 @@ public class CommandManager<TSender> where TSender : class
         if (CMD_DEBUG)
             log.Debug($"No matching command found for query &3{query}&r, &2{possible.Count}&r possible matches");
         
-        return new(null, null, ListPool<CommandOverload<TSender>>.ReturnToArray(possible), 
+        return new(null, null, ListObjectPool<CommandOverload<TSender>>.ReturnToArray(possible), 
             false, string.Empty, query, null, null);
     }
 

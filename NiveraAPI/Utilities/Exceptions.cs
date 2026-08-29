@@ -238,7 +238,7 @@ public static class Exceptions
 		_unhandledExceptionStore.Clear();
 	}
 	
-		/// <summary>
+	/// <summary>
 	/// Logs the provided exception to the appropriate output based on the specified configuration.
 	/// </summary>
 	/// <param name="isUnhandled">Indicates whether the exception is unhandled.</param>

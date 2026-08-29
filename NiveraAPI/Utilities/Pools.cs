@@ -17,7 +17,7 @@ public static class Pools
 	/// <typeparam name="T">The type of elements contained in the list.</typeparam>
 	/// <returns>A <see cref="List{T}"/> instance from the pool. The list is returned in an empty state and ready for use.</returns>
 	public static List<T> PoolList<T>()
-		=> ListPool<T>.Shared.Rent();
+		=> ListObjectPool<T>.Shared.Rent();
 
 	/// <summary>
 	/// Rents a <see cref="List{T}"/> instance from the shared pool and ensures it has at least the specified capacity.
@@ -26,7 +26,7 @@ public static class Pools
 	/// <typeparam name="T">The type of elements contained in the list.</typeparam>
 	/// <returns>A <see cref="List{T}"/> instance with a capacity greater than or equal to the specified size. The list may be resized if its current capacity is less than the requested size.</returns>
 	public static List<T> PoolList<T>(int size)
-		=> ListPool<T>.Shared.Rent(size);
+		=> ListObjectPool<T>.Shared.Rent(size);
 
 	/// <summary>
 	/// Rents a <see cref="List{T}"/> instance from the shared pool and populates it with the specified values.
@@ -35,7 +35,7 @@ public static class Pools
 	/// <typeparam name="T">The type of elements contained in the list.</typeparam>
 	/// <returns>A <see cref="List{T}"/> instance containing the specified values.</returns>
 	public static List<T> PoolList<T>(IEnumerable<T> values)
-		=> ListPool<T>.Shared.Rent(values);
+		=> ListObjectPool<T>.Shared.Rent(values);
 
 	/// <summary>
 	/// Returns a previously rented <see cref="List{T}"/> instance to the shared pool.
@@ -43,7 +43,7 @@ public static class Pools
 	/// <param name="list">The <see cref="List{T}"/> instance to be returned to the pool.</param>
 	/// <typeparam name="T">The type of elements contained in the list.</typeparam>
 	public static void ReturnList<T>(this List<T> list)
-		=> ListPool<T>.Shared.Return(list);
+		=> ListObjectPool<T>.Shared.Return(list);
 
 	/// <summary>
 	/// Rents a <see cref="Dictionary{TKey, TValue}"/> instance from the shared pool.
@@ -52,7 +52,7 @@ public static class Pools
 	/// <typeparam name="TValue">The type of the values in the dictionary.</typeparam>
 	/// <returns>A <see cref="Dictionary{TKey, TValue}"/> instance rented from the pool.</returns>
 	public static Dictionary<TKey, TValue> PoolDictionary<TKey, TValue>()
-		=> DictionaryPool<TKey, TValue>.Shared.Rent();
+		=> DictionaryObjectPool<TKey, TValue>.Shared.Rent();
 
 	/// <summary>
 	/// Rents a <see cref="Dictionary{TKey, TValue}"/> instance from the shared pool and populates it with the contents of the specified dictionary.
@@ -62,7 +62,7 @@ public static class Pools
 	/// <typeparam name="TValue">The type of the values in the dictionary.</typeparam>
 	/// <returns>A <see cref="Dictionary{TKey, TValue}"/> instance rented from the pool, containing all elements from the input dictionary.</returns>
 	public static Dictionary<TKey, TValue> PoolDictionary<TKey, TValue>(IDictionary<TKey, TValue> dict)
-		=> DictionaryPool<TKey, TValue>.Shared.Rent(dict);
+		=> DictionaryObjectPool<TKey, TValue>.Shared.Rent(dict);
 
 	/// <summary>
 	/// Returns a previously rented <see cref="Dictionary{TKey, TValue}"/> instance to the shared pool for reuse.
@@ -71,14 +71,14 @@ public static class Pools
 	/// <typeparam name="TKey">The type of the keys in the dictionary.</typeparam>
 	/// <typeparam name="TValue">The type of the values in the dictionary.</typeparam>
 	public static void ReturnDictionary<TKey, TValue>(this Dictionary<TKey, TValue> dict)
-		=> DictionaryPool<TKey, TValue>.Shared.Return(dict);
+		=> DictionaryObjectPool<TKey, TValue>.Shared.Return(dict);
 
 	/// <summary>
 	/// Retrieves a reusable <see cref="StringBuilder"/> instance from the shared pool.
 	/// </summary>
 	/// <returns>A <see cref="StringBuilder"/> instance for use.</returns>
 	public static StringBuilder PoolStringBuilder()
-		=> StringBuilderPool.Shared.Rent();
+		=> StringBuilderObjectPool.Shared.Rent();
 
 	/// <summary>
 	/// Rents and returns a new <see cref="StringBuilder"/> instance from the shared pool for reuse.
@@ -124,7 +124,7 @@ public static class Pools
 	/// <param name="stringBuilder">The <see cref="StringBuilder"/> instance to return to the pool.</param>
 	/// <exception cref="ArgumentNullException">Thrown when the provided <paramref name="stringBuilder"/> is null.</exception>
 	public static void ReturnStringBuilder(this StringBuilder stringBuilder)	
-		=> StringBuilderPool.Shared.Return(stringBuilder);
+		=> StringBuilderObjectPool.Shared.Return(stringBuilder);
 
 	/// <summary>
 	/// Returns the string value of the content within the specified <see cref="StringBuilder"/> instance,
@@ -134,5 +134,5 @@ public static class Pools
 	/// <returns>The string representation of the content in the specified <see cref="StringBuilder"/>.</returns>
 	/// <exception cref="ArgumentNullException">Thrown when the provided <paramref name="stringBuilder"/> is null.</exception>
 	public static string ReturnStringBuilderValue(this StringBuilder stringBuilder)
-		=> StringBuilderPool.Shared.ReturnToString(stringBuilder);
+		=> StringBuilderObjectPool.Shared.ReturnToString(stringBuilder);
 }

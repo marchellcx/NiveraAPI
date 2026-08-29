@@ -17,6 +17,7 @@ public class TcpServerSendPipe
     private volatile bool stopSignal;
     
     private volatile TcpClient tcpClient;
+    
     private volatile NetConnection netConn;
     private volatile NetworkStream netStream;
 
@@ -41,26 +42,26 @@ public class TcpServerSendPipe
     /// </remarks>
     public void Start()
     {
-        netConn.Log.DebugIf("TcpServerSendPipe", $"Starting ..", netConn.debugLogs);
+        netConn.Log.DebugIf("TcpServerSendPipe", "Starting ..", netConn.DebugLogs);
         
         stopSignal = false;
         sentBytes = 0;
         
         try
         {
-            netConn.Log.DebugIf("TcpServerSendPipe", $"Fetching stream ..", netConn.debugLogs);
+            netConn.Log.DebugIf("TcpServerSendPipe", "Fetching stream ..", netConn.DebugLogs);
             netStream = tcpClient.GetStream();
             
-            netConn.Log.DebugIf("TcpServerSendPipe", $"Starting update ..", netConn.debugLogs);
+            netConn.Log.DebugIf("TcpServerSendPipe", "Starting update ..", netConn.DebugLogs);
 
             ThreadPool.QueueUserWorkItem(_ => UpdateQueue());
             
-            netConn.Log.DebugIf("TcpServerSendPipe", $"Started!", netConn.debugLogs);
+            netConn.Log.DebugIf("TcpServerSendPipe", "Started!", netConn.DebugLogs);
         }
         catch (Exception ex)
         {
-            netConn.Log.DebugIf("TcpServerSendPipe", ex, netConn.debugLogs);
-            netConn.server.Disconnect(netConn);
+            netConn.Log.DebugIf("TcpServerSendPipe", ex, netConn.DebugLogs);
+            netConn.Server!.Disconnect(netConn);
         }
     }
 
@@ -71,11 +72,11 @@ public class TcpServerSendPipe
     {
         stopSignal = true;
 
-        netConn.Log.DebugIf("TcpServerSendPipe", $"Stopping ..", netConn.debugLogs);
+        netConn.Log.DebugIf("TcpServerSendPipe", "Stopping ..", netConn.DebugLogs);
         
         try
         {
-            netConn.Log.DebugIf("TcpServerSendPipe", $"Disposing stream ..", netConn.debugLogs);
+            netConn.Log.DebugIf("TcpServerSendPipe", "Disposing stream ..", netConn.DebugLogs);
             
             if (netStream != null)
             {
@@ -89,7 +90,7 @@ public class TcpServerSendPipe
             // ignored
         }
         
-        netConn.Log.DebugIf("TcpServerSendPipe", $"Clearing queues ..", netConn.debugLogs);
+        netConn.Log.DebugIf("TcpServerSendPipe", "Clearing queues ..", netConn.DebugLogs);
         
         while (pool.TryDequeue(out var writer))
             writer.ReturnToPool();
@@ -180,13 +181,13 @@ public class TcpServerSendPipe
                     netStream.Flush();
 
                     Interlocked.Add(ref sentBytes, length);
+                    Interlocked.Add(ref netConn.Server!.sentBytes, length);
 
-                    netConn.Log.DebugIf("TcpClientSendPipe", $"Sent {length} byte(s) (total {sentBytes})", netConn.debugLogs);
+                    netConn.Log.DebugIf("TcpClientSendPipe", $"Sent {length} byte(s) (total {sentBytes})", netConn.DebugLogs);
                 }
                 catch (Exception ex)
                 {
-                    netConn.Log.Error("TcpClientSendPipe", ex);
-                    netConn.server.Disconnect(netConn);
+                    netConn.Server!.Disconnect(netConn);
                     
                     stopSignal = true;
                 }

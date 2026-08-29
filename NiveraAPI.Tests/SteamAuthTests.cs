@@ -1,5 +1,5 @@
 using NiveraAPI.Logs;
-using NiveraAPI.Rest.Steam;
+using NiveraAPI.Steam.Auth;
 
 namespace NiveraAPI.Tests;
 

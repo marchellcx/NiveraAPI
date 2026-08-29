@@ -79,7 +79,7 @@ namespace NiveraAPI.Extensions
         public static TEnum[] GetFlags<TEnum>(this TEnum en) where TEnum : struct, Enum
         {
             var values = GetValues<TEnum>();
-            var cache = ListPool<TEnum>.Shared.Rent();
+            var cache = ListObjectPool<TEnum>.Shared.Rent();
 
             foreach (var value in values)
             {
@@ -91,7 +91,7 @@ namespace NiveraAPI.Extensions
 
             var array = cache.ToArray();
 
-            ListPool<TEnum>.Shared.Return(cache);
+            ListObjectPool<TEnum>.Shared.Return(cache);
             return array;
         }
 

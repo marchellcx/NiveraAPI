@@ -147,7 +147,7 @@ namespace NiveraAPI.Extensions
         public static void InvokeStaticMethods(this Assembly assembly, Func<MethodInfo, bool> predicate, Func<MethodInfo, int> prioritySelector, bool isDescending, params object[] args)
         {
             var types = assembly.GetTypes();
-            var methods = ListPool<MethodInfo>.Shared.Rent();
+            var methods = ListObjectPool<MethodInfo>.Shared.Rent();
 
             foreach (var type in types)
             {
@@ -179,7 +179,7 @@ namespace NiveraAPI.Extensions
                 }
             }
 
-            ListPool<MethodInfo>.Shared.Return(methods);
+            ListObjectPool<MethodInfo>.Shared.Return(methods);
         }
         
         /// <summary>

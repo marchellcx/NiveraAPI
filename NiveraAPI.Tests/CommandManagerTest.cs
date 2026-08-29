@@ -39,7 +39,7 @@ public static class CommandManagerTest
             return;
         }
         
-        ctx.SetOkText(StringBuilderPool.BuildString(x =>
+        ctx.SetOkText(StringBuilderObjectPool.BuildString(x =>
         {
             x.Append("Hello, world!");
             x.Append(" Arguments: ");

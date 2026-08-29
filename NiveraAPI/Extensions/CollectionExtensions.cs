@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+
 using NiveraAPI.Pooling;
 using NiveraAPI.Utilities;
 
@@ -93,7 +94,7 @@ namespace NiveraAPI.Extensions
         /// </returns>
         public static T[] ConvertStringArray<T>(this string[] strings, TryParseDelegate<T> tryParseDelegate)
         {
-            var list = ListPool<T>.Shared.Rent();
+            var list = ListObjectPool<T>.Shared.Rent();
 
             for (var x = 0; x < strings.Length; x++)
             {
@@ -103,7 +104,7 @@ namespace NiveraAPI.Extensions
                 }
             }
 
-            return ListPool<T>.ReturnToArray(list);
+            return ListObjectPool<T>.ReturnToArray(list);
         }
 
         /// <summary>
@@ -231,7 +232,7 @@ namespace NiveraAPI.Extensions
             if (item == null)
                 throw new ArgumentNullException(nameof(item));
             
-            var list = ListPool<T>.Shared.Rent();
+            var list = ListObjectPool<T>.Shared.Rent();
 
             while (stack.TryPop(out var popped))
             {
@@ -249,7 +250,79 @@ namespace NiveraAPI.Extensions
                 }
             }
             
-            ListPool<T>.Shared.Return(list);
+            ListObjectPool<T>.Shared.Return(list);
+        }
+
+        /// <summary>
+        /// Removes a specific item from the <see cref="ConcurrentBag{T}"/> without disrupting the remaining elements.
+        /// </summary>
+        /// <typeparam name="T">The type of elements in the bag.</typeparam>
+        /// <param name="bag">The <see cref="ConcurrentBag{T}"/> from which the item will be removed. Cannot be null.</param>
+        /// <param name="item">The item to be removed from the bag. Cannot be null.</param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="bag"/> or <paramref name="item"/> is null.</exception>
+        public static void Remove<T>(this ConcurrentBag<T> bag, T item)
+        {
+            if (bag == null)
+                throw new ArgumentNullException(nameof(bag));
+
+            if (item == null)
+                throw new ArgumentNullException(nameof(item));
+            
+            var list = ListObjectPool<T>.Shared.Rent();
+
+            foreach (var obj in bag)
+            {
+                if (obj.Equals(item))
+                    continue;
+                
+                list.Add(obj);
+            }
+
+            if (list.Count > 0)
+            {
+                for (var x = 0; x < list.Count; x++)
+                {
+                    bag.Add(list[x]);
+                }
+            }
+            
+            ListObjectPool<T>.Shared.Return(list);
+        }
+
+        /// <summary>
+        /// Removes all items in the <see cref="ConcurrentBag{T}"/> that match the specified predicate.
+        /// </summary>
+        /// <typeparam name="T">The type of elements in the <see cref="ConcurrentBag{T}"/>.</typeparam>
+        /// <param name="bag">The <see cref="ConcurrentBag{T}"/> from which items will be removed. Cannot be null.</param>
+        /// <param name="predicate">The predicate function used to determine which items to remove. Cannot be null.</param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="bag"/> or <paramref name="predicate"/> is null.</exception>
+        public static void RemoveAll<T>(this ConcurrentBag<T> bag, Predicate<T> predicate)
+        {
+            if (bag == null)
+                throw new ArgumentNullException(nameof(bag));
+
+            if (predicate == null)
+                throw new ArgumentNullException(nameof(predicate));
+            
+            var list = ListObjectPool<T>.Shared.Rent();
+
+            foreach (var obj in bag)
+            {
+                if (predicate(obj))
+                    continue;
+                
+                list.Add(obj);
+            }
+
+            if (list.Count > 0)
+            {
+                for (var x = 0; x < list.Count; x++)
+                {
+                    bag.Add(list[x]);
+                }
+            }
+            
+            ListObjectPool<T>.Shared.Return(list);
         }
 
         /// <summary>
@@ -268,7 +341,7 @@ namespace NiveraAPI.Extensions
             if (predicate == null)
                 throw new ArgumentNullException(nameof(predicate));
             
-            var list = ListPool<T>.Shared.Rent();
+            var list = ListObjectPool<T>.Shared.Rent();
             var count = 0;
 
             while (stack.TryPop(out var popped))
@@ -290,7 +363,7 @@ namespace NiveraAPI.Extensions
                 }
             }
             
-            ListPool<T>.Shared.Return(list);
+            ListObjectPool<T>.Shared.Return(list);
             return count;
         }
 
@@ -310,7 +383,7 @@ namespace NiveraAPI.Extensions
             if (predicate == null)
                 throw new ArgumentNullException(nameof(predicate));
             
-            var list = ListPool<T>.Shared.Rent();
+            var list = ListObjectPool<T>.Shared.Rent();
             var matched = false;
 
             while (stack.TryPop(out var popped))
@@ -332,7 +405,7 @@ namespace NiveraAPI.Extensions
                 }
             }
             
-            ListPool<T>.Shared.Return(list);
+            ListObjectPool<T>.Shared.Return(list);
             return matched;
         }
 
@@ -356,7 +429,7 @@ namespace NiveraAPI.Extensions
             if (selector == null)
                 throw new ArgumentNullException(nameof(selector));
             
-            var list = ListPool<TTarget>.Shared.Rent();
+            var list = ListObjectPool<TTarget>.Shared.Rent();
 
             foreach (var obj in source)
             {
@@ -462,7 +535,7 @@ namespace NiveraAPI.Extensions
                 throw new Exception($"Not enough items to select ({count} / {minCount})");
 
             var array = new T[minCount];
-            var selected = ListPool<int>.Shared.Rent();
+            var selected = ListObjectPool<int>.Shared.Rent();
 
             for (int i = 0; i < minCount; i++)
             {
@@ -475,7 +548,7 @@ namespace NiveraAPI.Extensions
                 array[i] = items.ElementAt(index);
             }
 
-            ListPool<int>.Shared.Return(selected);
+            ListObjectPool<int>.Shared.Return(selected);
             return array;
         }
 
@@ -491,7 +564,7 @@ namespace NiveraAPI.Extensions
                 throw new Exception($"Not enough items to select ({count} / {minCount})");
 
             var list = new List<T>(minCount);
-            var selected = ListPool<int>.Shared.Rent();
+            var selected = ListObjectPool<int>.Shared.Rent();
 
             for (int i = 0; i < minCount; i++)
             {
@@ -504,7 +577,7 @@ namespace NiveraAPI.Extensions
                 list.Add(items.ElementAt(index));
             }
 
-            ListPool<int>.Shared.Return(selected);
+            ListObjectPool<int>.Shared.Return(selected);
             return list;
         }
 
@@ -520,7 +593,7 @@ namespace NiveraAPI.Extensions
                 throw new Exception($"Not enough items to select ({count} / {minCount})");
 
             var set = new HashSet<T>(minCount);
-            var selected = ListPool<int>.Shared.Rent();
+            var selected = ListObjectPool<int>.Shared.Rent();
 
             for (int i = 0; i < minCount; i++)
             {
@@ -533,7 +606,7 @@ namespace NiveraAPI.Extensions
                 set.Add(items.ElementAt(index));
             }
 
-            ListPool<int>.Shared.Return(selected);
+            ListObjectPool<int>.Shared.Return(selected);
             return set;
         }
         #endregion
@@ -680,13 +753,13 @@ namespace NiveraAPI.Extensions
         /// ToList() with a pooled list instance.
         /// </summary>
         public static List<T> ToPooledList<T>(this IEnumerable<T> objects)
-            => ListPool<T>.Shared.Rent(objects);
+            => ListObjectPool<T>.Shared.Rent(objects);
 
         /// <summary>
         /// Returns a pool list to the shared pool.
         /// </summary>
         public static void ReturnToPool<T>(this List<T> pooledList)
-            => ListPool<T>.Shared.Return(pooledList);
+            => ListObjectPool<T>.Shared.Return(pooledList);
         #endregion
 
         #region Enumerable Extensions
@@ -1029,7 +1102,7 @@ namespace NiveraAPI.Extensions
         /// <returns>A pooled copy of the source dictionary.</returns>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="source"/> is null.</exception>
         public static Dictionary<TKey, TValue> PooledCopy<TKey, TValue>(this IDictionary<TKey, TValue> source)
-            => DictionaryPool<TKey, TValue>.Shared.Rent(source);
+            => DictionaryObjectPool<TKey, TValue>.Shared.Rent(source);
 
         /// <summary>
         /// Modifies the values of the dictionary in-place using a provided function, with pooled memory management for intermediate operations.
@@ -1058,7 +1131,7 @@ namespace NiveraAPI.Extensions
             foreach (var item in dictionary)
                 dict[item.Key] = func(item.Key, item.Value);
 
-            DictionaryPool<TKey, TValue>.Shared.Return(dictionary);
+            DictionaryObjectPool<TKey, TValue>.Shared.Return(dictionary);
         }
 
         /// <summary>
@@ -1086,7 +1159,7 @@ namespace NiveraAPI.Extensions
             foreach (KeyValuePair<TKey, TValue> item in dictionary)
                 func?.Invoke(item.Key, dict);
             
-            DictionaryPool<TKey, TValue>.Shared.Return(dictionary);
+            DictionaryObjectPool<TKey, TValue>.Shared.Return(dictionary);
         }
         
         /// <summary>

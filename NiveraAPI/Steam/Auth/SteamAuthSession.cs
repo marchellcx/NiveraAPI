@@ -1,4 +1,4 @@
-namespace NiveraAPI.Rest.Steam;
+namespace NiveraAPI.Steam.Auth;
 
 /// <summary>
 /// Represents a Steam authentication session, including session details,

@@ -19,29 +19,24 @@ namespace NiveraAPI.IO.Network;
 /// </summary>
 public class NetConnection : ServiceCollection
 {
-    internal volatile bool debugLogs;
-    internal volatile int id;
+    private volatile bool debugLogs;
+    private volatile int id;
 
-    private volatile object msgLock = new();
-    private volatile ByteWriter msgWriter = ByteWriter.Get();
+    private volatile object msgLock;
+    private volatile ByteWriter msgWriter;
+
+    private volatile NetServer? server;
+    private volatile NetClient? client;
+
+    private volatile NetPing ping;
+    private volatile NetTime time;
+
+    private volatile LogSink log;
+
+    private volatile TcpClient tcpClient;
     
-    internal volatile Socket? socket;
-    internal volatile EndPoint endPoint;
-    
-    internal volatile IPEndPoint clientEndPoint;
-    internal volatile IPEndPoint serverSendEndPoint;
-
-    internal volatile NetServer? server;
-    internal volatile NetClient? client;
-
-    internal volatile NetPing ping;
-    internal volatile NetTime time;
-
-    internal volatile LogSink log;
-
-    internal volatile TcpClient tcpClient;
-    internal volatile TcpServerSendPipe tcpSendPipe;
-    internal volatile TcpServerRecvPipe tcpRecvPipe;
+    private volatile TcpServerSendPipe? sendPipe;
+    private volatile TcpServerRecvPipe? recvPipe;
 
     private float netTime = 0f;
 
@@ -65,6 +60,20 @@ public class NetConnection : ServiceCollection
     /// Whether the connection is a client connection.
     /// </summary>
     public bool IsClient => client != null;
+
+    /// <summary>
+    /// Represents the total number of bytes sent over the network connection.
+    /// This value is sourced from either the associated client or the server's send pipe,
+    /// depending on the connection type. Defaults to 0 if neither is available.
+    /// </summary>
+    public long SentBytes => client?.SentBytes ?? sendPipe?.sentBytes ?? 0;
+
+    /// <summary>
+    /// Gets the total number of bytes received by the connection.
+    /// For client connections, this value reflects the data received through the underlying client.
+    /// For server connections, it reflects the data received through the server's receive pipeline.
+    /// </summary>
+    public long ReceivedBytes => client?.ReceivedBytes ?? recvPipe?.receivedBytes ?? 0;
     
     /// <summary>
     /// Gets the active ping component.
@@ -89,15 +98,25 @@ public class NetConnection : ServiceCollection
     public NetServer? Server => server;
 
     /// <summary>
-    /// The socket associated with the connection.
+    /// Provides access to the underlying TCP client used for managing the network connection.
+    /// This property is primarily used for sending and receiving data over a network socket.
     /// </summary>
-    /// <remarks>Will be <c>null</c> if the connection is a server connection.</remarks>
-    public Socket? Socket => socket;
+    public TcpClient TcpClient => tcpClient;
+    
+    /// <summary>
+    /// Provides access to the underlying TCP server pipe used for sending data to the network.
+    /// </summary>
+    public TcpServerSendPipe? ServerSendPipe => sendPipe;
+
+    /// <summary>
+    /// Provides access to the underlying TCP server pipe used for receiving data from the network.
+    /// </summary>
+    public TcpServerRecvPipe? ServerReceivePipe => recvPipe;
     
     /// <summary>
     /// The end point of the connection.
     /// </summary>
-    public IPEndPoint EndPoint => clientEndPoint ?? (IPEndPoint)endPoint;
+    public IPEndPoint? EndPoint => tcpClient?.Client?.RemoteEndPoint as IPEndPoint;
 
     /// <summary>
     /// Gets the logging mechanism associated with the connection.
@@ -110,6 +129,16 @@ public class NetConnection : ServiceCollection
     public int MaxRetransmissions => client?.MaxRetransmissions ?? server?.MaxRetransmissions ?? 0;
 
     /// <summary>
+    /// Indicates whether debug logs are enabled for the network connection.
+    /// When set to true, additional debug information is logged to facilitate troubleshooting and monitoring of the connection.
+    /// </summary>
+    public bool DebugLogs
+    {
+        get => debugLogs;
+        set => debugLogs = value;
+    }
+
+    /// <summary>
     /// Whether the connection has any data to be sent.
     /// </summary>
     public bool HasData => msgWriter.Position > 0
@@ -120,48 +149,30 @@ public class NetConnection : ServiceCollection
     /// Creates a new <see cref="NetConnection"/> instance.
     /// </summary>
     /// <param name="server">The server instance associated with the connection.</param>
-    /// <param name="endPoint">The end point of the connection.</param>
+    /// <param name="client">The client instance associated with the connection.</param>
     /// <param name="id">The unique identifier for the connection.</param>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="server"/> or <paramref name="endPoint"/> is null.</exception>
-    public NetConnection(NetServer server, EndPoint endPoint, int id)
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="server"/> is null.</exception>
+    public NetConnection(NetServer server, TcpClient client, int id)
     {
         this.id = id;
         this.server = server ?? throw new ArgumentNullException(nameof(server));
-        this.endPoint = endPoint ?? throw new ArgumentNullException(nameof(endPoint));
-        
-        var ip = (IPEndPoint)endPoint;
-        var address = new IPAddress(ip.Address.GetAddressBytes());
+        this.tcpClient = client ?? throw new ArgumentNullException(nameof(client));
 
         debugLogs = server.debugLogs;
-        serverSendEndPoint = new IPEndPoint(address, ip.Port);
-
-        ping = new();
-        time = new(this);
-
-        log = LogManager.GetSource("IO", $"NetConnectionServer@{endPoint}[{id}]");
-    }
-    
-    /// <summary>
-    /// Creates a new <see cref="NetConnection"/> instance.
-    /// </summary>
-    /// <param name="client">The client instance associated with the connection.</param>
-    /// <param name="socket">The socket used for communication.</param>
-    /// <param name="endPoint">The end point of the connection.</param>
-    /// <param name="id">The unique identifier for the connection.</param>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="client"/> or <paramref name="socket"/> is null.</exception>
-    public NetConnection(NetClient client, Socket socket, IPEndPoint endPoint, int id)
-    {
-        this.id = id;
-        this.client = client ?? throw new ArgumentNullException(nameof(client));
-        this.socket = socket ?? throw new ArgumentNullException(nameof(socket));
-        this.clientEndPoint = endPoint ?? throw new ArgumentNullException(nameof(endPoint));
-
-        debugLogs = client.debugLogs;
+        
+        log = LogManager.GetSource("IO", $"NetConnectionServer@{EndPoint?.ToString() ?? "null"}[{id}]");
         
         ping = new();
         time = new(this);
         
-        log = LogManager.GetSource("IO", $"NetConnectionClient@{endPoint}");
+        msgLock = new();
+        msgWriter = ByteWriter.Get();
+
+        sendPipe = new(client, this);
+        sendPipe.Start();
+        
+        recvPipe = new(client, this);
+        recvPipe.Start();
     }
     
     /// <summary>
@@ -169,22 +180,23 @@ public class NetConnection : ServiceCollection
     /// </summary>
     /// <param name="client">The client instance associated with the connection.</param>
     /// <param name="tcpClient">The socket used for communication.</param>
-    /// <param name="endPoint">The end point of the connection.</param>
     /// <param name="id">The unique identifier for the connection.</param>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="client"/> or <paramref name="tcpClient"/> is null.</exception>
-    public NetConnection(NetClient client, IPEndPoint endPoint, TcpClient tcpClient, int id)
+    public NetConnection(NetClient client, TcpClient tcpClient, int id)
     {
         this.id = id;
-        this.tcpClient = tcpClient ?? throw new ArgumentNullException(nameof(tcpClient));
         this.client = client ?? throw new ArgumentNullException(nameof(client));
-        this.clientEndPoint = endPoint ?? throw new ArgumentNullException(nameof(endPoint));
+        this.tcpClient = tcpClient ?? throw new ArgumentNullException(nameof(tcpClient));
 
         debugLogs = client.debugLogs;
         
         ping = new();
         time = new(this);
+
+        msgLock = new();
+        msgWriter = ByteWriter.Get();
         
-        log = LogManager.GetSource("IO", $"NetConnectionClient@{endPoint}");
+        log = LogManager.GetSource("IO", $"NetConnectionClient@{EndPoint?.ToString() ?? "null"}");
     }
 
     /// <inheritdoc />
@@ -202,18 +214,23 @@ public class NetConnection : ServiceCollection
     public override void Stop()
     {
         base.Stop();
-        
-        StopAllServices();
-        
+
+        try
+        {
+            StopAllServices(true);
+        }
+        catch (Exception ex)
+        {
+            log.Error($"Failed to stop services!\n{ex}");
+        }
+
         netServices.Clear();
         messageHandlers.Clear();
         
         ping.Stop();
         time.Stop();
         
-        if (msgWriter != null)
-            msgWriter.ReturnToPool();
-
+        msgWriter?.ReturnToPool();
         msgWriter = null!;
         
         log.DebugIf("Stopped!", debugLogs);
@@ -289,10 +306,10 @@ public class NetConnection : ServiceCollection
         log.DebugIf("Disconnecting ...", debugLogs);
         
         if (IsClient)
-            client.Disconnect();
+            client!.Disconnect();
 
         if (IsServer)
-            server.Disconnect(this);
+            server!.Disconnect(this);
     }
 
     /// <summary>

@@ -37,7 +37,7 @@ public class CommandParameter
         /// Creates a new instance of the <see cref="ParameterAttributes"/> struct.
         /// </summary>
         public ParameterAttributes()
-            => SubAttributes = ListPool<ParameterSubAttribute>.Shared.Rent();
+            => SubAttributes = ListObjectPool<ParameterSubAttribute>.Shared.Rent();
 
         /// <summary>
         /// Retrieves a list of <see cref="ParameterAttributes"/> associated with the parameters of a given method.
@@ -54,7 +54,7 @@ public class CommandParameter
             if (parameters == null)
                 throw new ArgumentNullException(nameof(parameters));           
 
-            var list = ListPool<ParameterAttributes>.Shared.Rent();
+            var list = ListObjectPool<ParameterAttributes>.Shared.Rent();
 
             if (parameters.Length < 1)
                 return list;

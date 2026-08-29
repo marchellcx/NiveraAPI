@@ -1,0 +1,19 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs/NiveraAPI/CopilotIndices/18.10.1150.1527
+/.vs/NiveraAPI/DesignTimeBuild
+/.vs/NiveraAPI/FileContentIndex
+/.vs/NiveraAPI/v18
+/.vs/NiveraAPI.slnx/FileContentIndex
+/.vs/NiveraAPI.slnx/v18
+/.vs/ProjectEvaluation
+/NiveraAPI/bin/Release
+/.vs
+/NiveraAPI/obj/Release
+/NiveraAPI/obj
+/NiveraAPI.ScpSl/bin/Release
+/NiveraAPI.ScpSl/obj
+/NiveraAPI.Tests/bin
+/NiveraAPI.Tests/obj

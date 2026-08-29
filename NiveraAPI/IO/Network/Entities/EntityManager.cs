@@ -314,7 +314,7 @@ public class EntityManager : NetService
         {
             try
             {
-                DestroyEntity(entity);
+                LocalDestroy(entity);
             }
             catch (Exception ex)
             {
@@ -770,5 +770,27 @@ public class EntityManager : NetService
         entity.Info = EntityInfo.GetInfo(entity.GetType());
         
         entities.Add(entity);
+    }
+
+    private void LocalDestroy(Entity entity)
+    {
+        if (entity == null)
+            throw new ArgumentNullException(nameof(entity));
+
+        Log.DebugIf($"Destroying entity &1{entity.Id}&r", DebugLogs);
+
+        entities.Remove(entity);
+        entity.destroyed = true;
+
+        try
+        {
+            entity.OnDestroyed();
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Could not destroy entity &1{entity.Id}&r:\n{ex}");
+        }
+        
+        Log.DebugIf($"Entity &1{entity.Id}&r destroyed", DebugLogs);
     }
 }

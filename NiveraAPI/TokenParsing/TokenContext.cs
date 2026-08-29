@@ -103,8 +103,8 @@ public class TokenContext : IDisposable
         Input = input ?? throw new ArgumentNullException(nameof(input));
         Tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
 
-        Builder = StringBuilderPool.Shared.Rent();
-        EmptyBuilder = StringBuilderPool.Shared.Rent();
+        Builder = StringBuilderObjectPool.Shared.Rent();
+        EmptyBuilder = StringBuilderObjectPool.Shared.Rent();
     }
     
     /// <summary>
@@ -251,10 +251,10 @@ public class TokenContext : IDisposable
     public void Dispose()
     {
         if (Builder != null)
-            StringBuilderPool.Shared.Return(Builder);
+            StringBuilderObjectPool.Shared.Return(Builder);
         
         if (EmptyBuilder != null)
-            StringBuilderPool.Shared.Return(EmptyBuilder);
+            StringBuilderObjectPool.Shared.Return(EmptyBuilder);
 
         NextChar = null;
 

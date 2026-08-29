@@ -1,4 +1,5 @@
-﻿using NiveraAPI.IO.Serialization.Interfaces;
+﻿using System.Reflection;
+using NiveraAPI.IO.Serialization.Interfaces;
 using NiveraAPI.IO.Serialization.Serializers;
 
 using NiveraAPI.Pooling.Interfaces;
@@ -163,6 +164,267 @@ public static class ObjectSerializer
         
         if (constructor != null)
             StaticConstructor<T>.Set(constructor);       
+    }
+
+    /// <summary>
+    /// Registers all serializers found in the given assembly. This method scans the types
+    /// within the specified assembly, identifies serializer-related members based on custom
+    /// attributes, and automatically registers them for use in serialization operations.
+    /// </summary>
+    /// <param name="assembly">
+    /// The assembly to scan for serializers. This parameter must not be null, and it should
+    /// contain types with members marked by serializer-specific attributes.
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when the provided assembly is null.
+    /// </exception>
+    public static void RegisterSerializers(Assembly assembly)
+    {
+        if (assembly == null)
+            throw new ArgumentNullException(nameof(assembly));
+
+        foreach (var type in assembly.GetTypes())
+        {
+            try
+            {
+                foreach (var prop in type.GetAllProperties())
+                {
+                    if (!prop.HasAttribute<SerializerAttribute>(out _))
+                        continue;
+
+                    var getter = prop.GetGetMethod(true);
+
+                    if (getter == null)
+                    {
+                        log.Warn($"Property &1{prop.Name}&r does not have a getter, skipping ..");
+                        continue;
+                    }
+
+                    if (!getter.IsStatic)
+                    {
+                        log.Warn($"Property &1{prop.Name}&r is not static, skipping ..");
+                        continue;                   
+                    }
+
+                    var delArgs = prop.PropertyType.GetGenericArguments();
+
+                    if (delArgs.Length != 2)
+                    {
+                        log.Warn($"Property &1{prop.Name}&r is not a generic type, skipping ..");
+                        continue;
+                    }
+
+                    if (delArgs[0] == typeof(ByteReader))
+                    {
+                        var deserializer = getter.Invoke(null, null);
+
+                        if (deserializer != null)
+                        {
+                            var storedType = typeof(ByteSerializer<>).MakeGenericType(delArgs[1]);
+                            var storedField = storedType.FindField("Deserializer");
+
+                            if (storedField != null)
+                            {
+                                storedField.SetValue(null, deserializer);
+                                
+                                log.Debug($"Registered deserializer for property &1{prop.Name}&r: &3{delArgs[1]}&r");
+                            }
+                            else
+                            {
+                                log.Warn($"Failed to get deserializer field for &1{prop.Name}&r, skipping ..");
+                            }
+                        }
+                        else
+                        {
+                            log.Warn($"Failed to get deserializer for property &1{prop.Name}&r, skipping ..");
+                        }
+                    }
+                    else if (delArgs[0] == typeof(ByteWriter))
+                    {
+                        var serializer = getter.Invoke(null, null);
+
+                        if (serializer != null)
+                        {
+                            var storedType = typeof(ByteSerializer<>).MakeGenericType(delArgs[1]);
+                            var storedField = storedType.FindField("Serializer");
+
+                            if (storedField != null)
+                            {
+                                storedField.SetValue(null, serializer);
+                                
+                                log.Debug($"Registered serializer for property &1{prop.Name}&r: &3{delArgs[1]}&r");
+                            }
+                            else
+                            {
+                                log.Warn($"Failed to get serializer field for &1{prop.Name}&r, skipping ..");
+                            }
+                        }
+                        else
+                        {
+                            log.Warn($"Failed to get serializer for property &1{prop.Name}&r, skipping ..");
+                        }
+                    }
+                    else
+                    {
+                        log.Warn($"Property &1{prop.Name}&r contains an invalid signature, skipping ..");
+                    }
+                }
+
+                foreach (var field in type.GetAllFields())
+                {
+                    if (!field.HasAttribute<SerializerAttribute>(out _))
+                        continue;
+
+                    if (!field.IsStatic)
+                    {
+                        log.Warn($"Field &1{field.Name}&r is not static, skipping ..");
+                        continue;
+                    }
+
+                    var delArgs = field.FieldType.GetGenericArguments();
+
+                    if (delArgs.Length != 2)
+                    {
+                        log.Warn($"Field &1{field.Name}&r is not a generic type, skipping ..");
+                        continue;
+                    }
+
+                    if (delArgs[0] == typeof(ByteReader))
+                    {
+                        var deserializer = field.GetValue(null);
+
+                        if (deserializer != null)
+                        {
+                            var storedType = typeof(ByteSerializer<>).MakeGenericType(delArgs[1]);
+                            var storedField = storedType.FindField("Deserializer");
+
+                            if (storedField != null)
+                            {
+                                storedField.SetValue(null, deserializer);
+                                
+                                log.Debug($"Registered deserializer for field &1{field.Name}&r: &3{delArgs[1]}&r");
+                            }
+                            else
+                            {
+                                log.Warn($"Failed to get deserializer field for &1{field.Name}&r, skipping ..");
+                            }
+                        }
+                        else
+                        {
+                            log.Warn($"Failed to get deserializer for field &1{field.Name}&r, skipping ..");
+                        }
+                    }
+                    else if (delArgs[0] == typeof(ByteWriter))
+                    {
+                        var serializer = field.GetValue(null);
+
+                        if (serializer != null)
+                        {
+                            var storedType = typeof(ByteSerializer<>).MakeGenericType(delArgs[1]);
+                            var storedField = storedType.FindField("Serializer");
+
+                            if (storedField != null)
+                            {
+                                storedField.SetValue(null, serializer);
+                                
+                                log.Debug($"Registered serializer for field &1{field.Name}&r: &3{delArgs[1]}&r");
+                            }
+                            else
+                            {
+                                log.Warn($"Failed to get serializer field for &1{field.Name}&r, skipping ..");
+                            }
+                        }
+                        else
+                        {
+                            log.Warn($"Failed to get serializer for field &1{field.Name}&r, skipping ..");
+                        }
+                    }
+                    else
+                    {
+                        log.Warn($"Field &1{field.Name}&r contains an invalid signature, skipping ..");
+                    }
+                }
+
+                foreach (var method in type.GetAllMethods())
+                {
+                    if (!method.HasAttribute<SerializerAttribute>(out _))
+                        continue;
+
+                    if (method.ReturnType != typeof(void))
+                    {
+                        var args = method.GetAllParameters();
+
+                        if (args.Length != 1 || args[0].ParameterType != typeof(ByteReader))
+                        {
+                            log.Warn($"Method &1{method.GetMemberName()}&r does not have a valid signature, skipping ..");
+                            continue;
+                        }
+
+                        var deserializerType = typeof(Func<,>).MakeGenericType(typeof(ByteReader), method.ReturnType);
+                        var deserializer = method.CreateDelegate(deserializerType);
+
+                        if (deserializer != null)
+                        {
+                            var storedType = typeof(ByteSerializer<>).MakeGenericType(method.ReturnType);
+                            var storedField = storedType.FindField("Deserializer");
+
+                            if (storedField != null)
+                            {
+                                storedField.SetValue(null, deserializer);
+                                
+                                log.Debug($"Registered deserializer for method &1{method.GetMemberName()}&r");
+                            }
+                            else
+                            {
+                                log.Warn($"Failed to get deserializer field for &1{method.GetMemberName()}&r, skipping ..");
+                            }
+                        }
+                        else
+                        {
+                            log.Warn($"Failed to get deserializer for method &1{method.GetMemberName()}&r, skipping ..");
+                        }
+                    }
+                    else
+                    {
+                        var args = method.GetAllParameters();
+
+                        if (args.Length != 2 || args[0].ParameterType != typeof(ByteWriter))
+                        {
+                            log.Warn($"Method &1{method.GetMemberName()}&r does not have a valid signature, skipping ..");
+                            continue;
+                        }
+
+                        var serializerType = typeof(Action<,>).MakeGenericType(typeof(ByteWriter), args[1].ParameterType);
+                        var serializer = method.CreateDelegate(serializerType);
+
+                        if (serializer != null)
+                        {
+                            var storedType = typeof(ByteSerializer<>).MakeGenericType(args[1].ParameterType);
+                            var storedField = storedType.FindField("Serializer");
+
+                            if (storedField != null)
+                            {
+                                storedField.SetValue(null, serializer);
+                                
+                                log.Debug($"Registered serializer for method &1{method.GetMemberName()}&r");
+                            }
+                            else
+                            {
+                                log.Warn($"Failed to get serializer field for &1{method.GetMemberName()}&r, skipping ..");
+                            }
+                        }
+                        else
+                        {
+                            log.Warn($"Failed to get serializer for method &1{method.GetMemberName()}&r, skipping ..");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error($"Failed to register serializers for type &1{type.FullName}&r:\n{ex}");
+            }
+        }   
     }
 
     private static void UpdateIndexes()

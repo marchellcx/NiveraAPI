@@ -23,9 +23,14 @@ public class RemoteMethod
     public volatile MethodInfo[]? ParameterReaders;
 
     /// <summary>
-    /// Whether the method is a basic method.
+    /// Whether the method is a reader method.
     /// </summary>
-    public volatile bool IsBasic;
+    public volatile bool IsReader;
+
+    /// <summary>
+    /// Whether the method is a reader/writer method.
+    /// </summary>
+    public volatile bool IsReaderWriter;
 
     /// <summary>
     /// Whether the method has a return value.

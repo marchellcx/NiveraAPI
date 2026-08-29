@@ -45,12 +45,12 @@ public class TcpClientRecvPipe
     /// </exception>
     public void Start()
     {
-        netClient.Log.DebugIf("TcpClientRecvPipe", $"Starting ..", netClient.DebugLogs);
+        netClient.Log.DebugIf("TcpClientRecvPipe", "Starting ..", netClient.DebugLogs);
         
         stopSignal = false;
         receivedBytes = 0;
         
-        netClient.Log.DebugIf("TcpClientRecvPipe", $"Fetching stream ..", netClient.DebugLogs);
+        netClient.Log.DebugIf("TcpClientRecvPipe", "Fetching stream ..", netClient.DebugLogs);
         
         try
         {
@@ -58,15 +58,15 @@ public class TcpClientRecvPipe
         }
         catch (Exception ex)
         {
-            netClient.TcpOnReceivePipeError(ex);
+            netClient.OnReceivePipeError(ex);
             return;
         }
         
-        netClient.Log.DebugIf("TcpClientRecvPipe", $"Starting update ..", netClient.DebugLogs);
+        netClient.Log.DebugIf("TcpClientRecvPipe", "Starting update ..", netClient.DebugLogs);
 
         ThreadPool.QueueUserWorkItem(_ => UpdateStream());
         
-        netClient.Log.DebugIf("TcpClientRecvPipe", $"Started!", netClient.DebugLogs);
+        netClient.Log.DebugIf("TcpClientRecvPipe", "Started!", netClient.DebugLogs);
     }
 
     /// <summary>
@@ -82,7 +82,7 @@ public class TcpClientRecvPipe
 
         try
         {
-            netClient.Log.DebugIf("TcpClientRecvPipe", $"Disposing stream ..", netClient.DebugLogs);
+            netClient.Log.DebugIf("TcpClientRecvPipe", "Disposing stream ..", netClient.DebugLogs);
             
             if (netStream != null)
             {
@@ -97,7 +97,7 @@ public class TcpClientRecvPipe
 
         netStream = null!;
         
-        netClient.Log.DebugIf("TcpClientRecvPipe", $"Clearing pools and queues", netClient.DebugLogs);
+        netClient.Log.DebugIf("TcpClientRecvPipe", "Clearing pools and queues", netClient.DebugLogs);
         
         while (pool.TryDequeue(out var reader))
             reader.ReturnToPool();
@@ -160,7 +160,7 @@ public class TcpClientRecvPipe
                 {
                     stopSignal = true;
                     
-                    netClient.TcpOnReceivePipeError(new IOException("Connection closed by remote host"));
+                    netClient.OnReceivePipeError(new IOException("Connection closed by remote host"));
                     break;
                 }
                 
@@ -178,7 +178,8 @@ public class TcpClientRecvPipe
             catch (Exception ex)
             {
                 stopSignal = true;
-                netClient.TcpOnReceivePipeError(ex);
+                
+                netClient.OnReceivePipeError(ex);
                 return;
             }
         }

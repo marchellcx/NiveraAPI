@@ -17,6 +17,7 @@ public class TcpServerRecvPipe
     private volatile bool stopSignal = false;
     
     private volatile TcpClient tcpClient;
+    
     private volatile NetConnection netConn;
     private volatile NetworkStream netStream;
 
@@ -45,12 +46,12 @@ public class TcpServerRecvPipe
     /// </exception>
     public void Start()
     {
-        netConn.Log.DebugIf("TcpServerRecvPipe", $"Starting ..", netConn.debugLogs);
+        netConn.Log.DebugIf("TcpServerRecvPipe", "Starting ..", netConn.DebugLogs);
         
         stopSignal = false;
         receivedBytes = 0;
         
-        netConn.Log.DebugIf("TcpServerRecvPipe", $"Fetching stream ..", netConn.debugLogs);
+        netConn.Log.DebugIf("TcpServerRecvPipe", "Fetching stream ..", netConn.DebugLogs);
         
         try
         {
@@ -58,15 +59,15 @@ public class TcpServerRecvPipe
         }
         catch 
         {
-            netConn.server.Disconnect(netConn);
+            netConn.Server!.Disconnect(netConn);
             return;
         }
         
-        netConn.Log.DebugIf("TcpServerRecvPipe", $"Starting update ..", netConn.debugLogs);
+        netConn.Log.DebugIf("TcpServerRecvPipe", "Starting update ..", netConn.DebugLogs);
 
         ThreadPool.QueueUserWorkItem(_ => UpdateStream());
         
-        netConn.Log.DebugIf("TcpServerRecvPipe", $"Started!", netConn.debugLogs);
+        netConn.Log.DebugIf("TcpServerRecvPipe", "Started!", netConn.DebugLogs);
     }
 
     /// <summary>
@@ -78,11 +79,11 @@ public class TcpServerRecvPipe
     {
         stopSignal = true;
 
-        netConn.Log.DebugIf("TcpServerRecvPipe", $"Stopping ..", netConn.debugLogs);
+        netConn.Log.DebugIf("TcpServerRecvPipe", "Stopping ..", netConn.DebugLogs);
         
         try
         {
-            netConn.Log.DebugIf("TcpServerRecvPipe", $"Disposing stream ..", netConn.debugLogs);
+            netConn.Log.DebugIf("TcpServerRecvPipe", "Disposing stream ..", netConn.DebugLogs);
             
             if (netStream != null)
             {
@@ -97,7 +98,7 @@ public class TcpServerRecvPipe
 
         netStream = null!;
         
-        netConn.Log.DebugIf("TcpServerRecvPipe", $"Clearing queues ..", netConn.debugLogs);
+        netConn.Log.DebugIf("TcpServerRecvPipe", "Clearing queues ..", netConn.DebugLogs);
         
         while (pool.TryDequeue(out var reader))
             reader.ReturnToPool();
@@ -160,30 +161,27 @@ public class TcpServerRecvPipe
                 {
                     stopSignal = true;
                     
-                    netConn.server.Disconnect(netConn);
-                    netConn.log.DebugIf("TcpServerRecvPipe", $"Remote side closed connection", netConn.debugLogs);
-                    
+                    netConn.Server!.Disconnect(netConn);
                     break;
                 }
+
+                Interlocked.Add(ref receivedBytes, bytesRead);
+                Interlocked.Add(ref netConn.Server!.recvBytes, bytesRead);
                 
                 accum.Write(buffer, 0, bytesRead);
                 
                 while (TryExtractMessage(length, accum, out var reader))
                 {
                     queue.Enqueue(reader);
-                    
-                    Interlocked.Add(ref receivedBytes, reader.Count);
 
-                    netConn.Log.DebugIf("TcpClientRecvPipe", $"Received {reader.Count} byte(s) (total {receivedBytes})", netConn.debugLogs);
+                    netConn.Log.DebugIf("TcpServerRecvPipe", $"Received {reader.Count} byte(s) (total {receivedBytes})", netConn.DebugLogs);
                 }
             }
-            catch (Exception ex)
+            catch
             {
                 stopSignal = true;
                 
-                netConn.server.Disconnect(netConn);
-                netConn.Log.Error("TcpServerRecvPipe", ex);
-                
+                netConn.Server!.Disconnect(netConn);
                 return;
             }
         }
