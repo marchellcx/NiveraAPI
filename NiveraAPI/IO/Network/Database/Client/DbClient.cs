@@ -30,8 +30,7 @@ public class DbClient : NetService
     private long shortestDiff = 0;
     
     private ushort transId = 0;
-    
-    private DbConfig config;
+
     private readonly List<DbTrans> transactions = new();
 
     /// <summary>
@@ -43,6 +42,11 @@ public class DbClient : NetService
     /// Whether or not to show debug logs.
     /// </summary>
     public bool DebugLogs { get; set; }
+
+    /// <summary>
+    /// The configuration settings used by the database client.
+    /// </summary>
+    public DbConfig? Config { get; set; }
     
     /// <summary>
     /// The permissions of the client.
@@ -536,20 +540,20 @@ public class DbClient : NetService
         if (!Connection.IsClient)
             throw new InvalidOperationException("Cannot start a database client on a server!");
         
+        if (Config is null)
+            throw new InvalidOperationException("Cannot start a database client without a configuration!");
+        
         transId = 0;
         longestDiff = 0;
         shortestDiff = 0;
-
-        config = Connection.Collection.GetService<DbConfig>();
-        config.Password ??= string.Empty;
 
         IsAuthenticated = false;
         
         Permissions = DbPerms.None;
         
-        Log.Info($"Database service started, sending authentication request as &1{config.User}&r ..");
+        Log.Info($"Database service started, sending authentication request as &1{Config.User}&r ..");
         
-        Send(new DbAuthMessage(config.User, config.Password));
+        Send(new DbAuthMessage(Config.User, Config.Password ?? string.Empty));
     }
 
     /// <summary>
@@ -586,8 +590,6 @@ public class DbClient : NetService
         IsAuthenticated = false;
         
         Permissions = DbPerms.None;
-
-        config = null!;
     }
 
     /// <summary>

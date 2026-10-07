@@ -1,6 +1,11 @@
-﻿using NiveraAPI.Extensions;
-using NiveraAPI.IO.Network.Entities.Messages;
+﻿using NiveraAPI.IO.Network.Entities.Messages;
+using NiveraAPI.IO.Network.Entities.Synchronization;
+
 using NiveraAPI.IO.Serialization;
+
+using NiveraAPI.Logs;
+using NiveraAPI.Pooling;
+using NiveraAPI.Utilities;
 
 namespace NiveraAPI.IO.Network.Entities;
 
@@ -9,10 +14,27 @@ namespace NiveraAPI.IO.Network.Entities;
 /// </summary>
 public class Entity
 {
-    internal bool confirmed;
-    internal bool destroyed;
+    private Dictionary<ushort, Action<ByteReader>> handlers = new();
+    
+    /// <summary>
+    /// Gets the event that is invoked when the entity is spawned.
+    /// </summary>
+    public event Action? Spawned;
 
-    internal Action<ByteReader?>?[] conversations = new Action<ByteReader?>?[byte.MaxValue - 1];
+    /// <summary>
+    /// Gets the event that is invoked when the entity is destroyed.
+    /// </summary>
+    public event Action? Destroyed;
+
+    /// <summary>
+    /// Gets the event that is invoked when the client confirms the entity spawn.
+    /// </summary>
+    public event Action? Confirmed;
+
+    /// <summary>
+    /// Gets the event that is invoked whenever the entity's state is updated.
+    /// </summary>
+    public event Action? Updated;
 
     /// <summary>
     /// Gets the entity's ID.
@@ -20,36 +42,70 @@ public class Entity
     public ushort Id { get; internal set; }
 
     /// <summary>
+    /// Whether or not the server has received a spawn confirmation message from the client - or - if the client has sent a spawn confirmation message.
+    /// </summary>
+    public bool IsConfirmed { get; internal set; }
+
+    /// <summary>
     /// Whether the entity is destroyed.
     /// </summary>
-    public bool IsDestroyed => destroyed || Manager == null;
+    public bool IsDestroyed
+    {
+        get => field || Manager == null;
+        internal set => field = value;
+    }
 
     /// <summary>
-    /// Whether the entity spawn is confirmed by the client.
+    /// Gets the logging sink associated with the network entity.
     /// </summary>
-    public bool IsConfirmed => confirmed;
-
-    /// <summary>
-    /// Gets the entity information.
-    /// </summary>
-    public EntityInfo Info { get; internal set; }
+    public LogSink Log
+    {
+        get
+        {
+            if (field == null)
+                field = LogManager.GetSource($"Entities@{Connection?.EndPoint?.ToString() ?? "null"}", GetType().Name);
+            
+            return field;
+        }
+    }
+    
+    public SyncParent SyncParent { get; private set; }
 
     /// <summary>
     /// Gets the parent entity manager.
     /// </summary>
-    public EntityManager Manager { get; internal set; }
+    public EntityManager? Manager { get; internal set; }
+
+    /// <summary>
+    /// Gets the network connection associated with the entity's manager, if available.
+    /// </summary>
+    public NetConnection? Connection => Manager?.Connection;
+
+    /// <summary>
+    /// Gets the local time for the entity, derived from the associated <see cref="EntityManager"/>.
+    /// </summary>
+    public float LocalTime => Manager?.LocalTime ?? 0f;
 
     /// <summary>
     /// Gets the network time in seconds.
     /// </summary>
-    public float NetworkTime => Manager.Connection.Time.Time;
+    public float NetworkTime => Manager?.NetworkTime ?? 0f;
+
+    /// <summary>
+    /// Gets the current network tick count. Represents the number of server ticks since the server started.
+    /// </summary>
+    public long NetworkTick => Manager?.TickCount ?? 0;
 
     /// <summary>
     /// Gets called when the entity is destroyed.
     /// </summary>
     public virtual void OnDestroyed()
     {
+        handlers.Clear();
         
+        SyncParent?.Destroy();
+        
+        Destroyed?.Invoke();
     }
 
     /// <summary>
@@ -57,7 +113,9 @@ public class Entity
     /// </summary>
     public virtual void OnServerSpawned()
     {
+        CommonSetup();
         
+        Spawned?.Invoke();
     }
 
     /// <summary>
@@ -65,7 +123,9 @@ public class Entity
     /// </summary>
     public virtual void OnClientSpawned()
     {
+        CommonSetup();
         
+        Spawned?.Invoke();
     }
 
     /// <summary>
@@ -73,17 +133,17 @@ public class Entity
     /// </summary>
     public virtual void OnClientConfirmed()
     {
-        
+        Confirmed?.Invoke();
     }
 
     /// <summary>
     /// Gets called periodically to update the entity's state.
     /// </summary>
-    /// <param name="localDeltaTime">The time in seconds that has elapsed locally since the last update call.</param>
-    /// <param name="networkDeltaTime">The time in seconds that has elapsed on the server since the last update call.</param>
-    public virtual void OnUpdate(float localDeltaTime, float networkDeltaTime)
+    public virtual void OnUpdate()
     {
+        SyncParent?.Update();
         
+        Updated?.Invoke();
     }
 
     /// <summary>
@@ -94,523 +154,211 @@ public class Entity
     /// True if the entity was successfully destroyed; otherwise, false if destruction failed or the entity
     /// was already destroyed.
     /// </returns>
-    public bool Destroy() 
-        => Manager?.DestroyEntity(this) ?? false;
-
-    /// <summary>
-    /// Sets the value of a synchronized variable, updates the field, and sends a message to the manager
-    /// to notify about the change.
-    /// </summary>
-    /// <param name="index">The index of the synchronized variable to be updated.</param>
-    /// <param name="value">The new value to assign to the synchronized variable.</param>
-    /// <param name="field">A reference to the local field representing the synchronized variable.</param>
-    /// <typeparam name="T">The type of the synchronized variable.</typeparam>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown if the provided index is greater than or equal to the number of available synchronized variables.
-    /// </exception>
-    public void SetSyncVar<T>(ushort index, T value, ref T field)
+    public bool Destroy()
     {
-        if (index >= Info.SyncVars.Count)
-            throw new ArgumentOutOfRangeException(nameof(index));
+        if (IsDestroyed)
+            return false;
 
-        if (field != null && value != null && value.Equals(field))
-            return;
-        
-        var syncVar = Info.SyncVars[index];
-        var curValue = field;
-        
-        field = value;
-        
-        using var writer = ByteWriter.GetWrite(w => w.Write(value));
-        
-        Manager.Send(new EntitySyncVarMessage(Id, index, writer.ToArray()));
-        
-        syncVar.Hook?.Invoke(this, [curValue, value]);
+        return Manager!.DestroyEntity(this);
     }
 
     /// <summary>
-    /// Sends a remote synchronous request using the specified remote index and writer,
-    /// and waits for a response to be received.
+    /// Registers a handler for processing incoming messages with the specified message ID and deserializing the message data into the specified type.
     /// </summary>
-    /// <param name="remoteIndex">The index of the remote method.</param>
-    /// <param name="writer">The writer instance used to serialize and transmit data to the remote callback.</param>
-    /// <returns>The response data as a <see cref="ByteReader"/> object, or null if no response is received.</returns>
-    /// <exception cref="AggregateException">
-    /// Thrown if an error occurs during the communication process.
-    /// </exception>
-    public ByteReader? SendRemoteSync(ushort remoteIndex, Action<ByteWriter> writer)
+    /// <typeparam name="TValue">The type to which the incoming message data will be deserialized.</typeparam>
+    /// <param name="msgId">The unique identifier of the message type to be handled.</param>
+    /// <param name="handler">The action to be invoked when a message with the specified ID is received. The action takes a parameter of type <typeparamref name="TValue"/> representing the deserialized message data.</param>
+    public void Receive<TValue>(ushort msgId, Action<TValue?> handler)
     {
-        var tcs = new TaskCompletionSource<ByteReader?>();
+        Receive(msgId, reader => handler(reader.Read<TValue>()));
+    }
+
+    /// <summary>
+    /// Registers a handler for processing incoming messages with the specified message ID.
+    /// </summary>
+    /// <param name="msgId">The unique identifier of the message type to be handled.</param>
+    /// <param name="handler">The action to be invoked when a message with the specified ID is received. The action takes a <see cref="ByteReader"/> parameter for reading the message data.</param>
+    public void Receive(ushort msgId, Action<ByteReader> handler)
+    {
+        Exceptions.NullArgument(nameof(handler), handler);
+        
+        handlers[msgId] = handler;
+    }
+
+    /// <summary>
+    /// Sends a message with the specified identifier and value.
+    /// </summary>
+    /// <typeparam name="TArg">
+    /// The type of the value to send with the message. This type must be compatible with the serialization system.
+    /// </typeparam>
+    /// <param name="id">
+    /// The identifier of the message to be sent.
+    /// </param>
+    /// <param name="value">
+    /// The value to be serialized and sent with the message.
+    /// </param>
+    public void Send<TArg>(ushort id, TArg value)
+    {
+        Send(id, writer => writer.Write(value));
+    }
+
+    /// <summary>
+    /// Sends a message with the specified identifier and writes its data using the provided <see cref="ByteWriter"/> instance.
+    /// </summary>
+    /// <param name="id">
+    /// The identifier of the message to be sent.
+    /// </param>
+    /// <param name="dataWriter">
+    /// An action that writes the data of the message using the provided <see cref="ByteWriter"/>.
+    /// </param>
+    public void Send(ushort id, Action<ByteWriter> dataWriter)
+    {
+        Exceptions.NullArgument(nameof(dataWriter), dataWriter);
+
+        var writer = ByteWriter.Get();
 
         try
         {
-            SendRemoteCallback(remoteIndex, writer, tcs.SetResult);
+            dataWriter(writer);
+
+            Send(id, writer);
         }
         catch (Exception ex)
         {
-            tcs.SetException(ex);
+            Log.Error($"Caught exception while sending message with ID &3{id}&r:\n{ex}");
         }
 
-        while (!tcs.Task.IsCompleted)
-            Thread.Sleep(1);
-
-        if (tcs.Task.Exception != null)
-            throw tcs.Task.Exception;
-
-        return tcs.Task.Result;
+        writer.ReturnToPool();
     }
 
     /// <summary>
-    /// Sends a synchronous remote request to the specified remote index, optionally providing data,
-    /// and waits for a response to be received.
+    /// Sends a message with the specified identifier and data to the associated network connection.
     /// </summary>
-    /// <param name="remoteIndex">The index of the remote method.</param>
-    /// <param name="data">The data to be sent with the request, or null if no data is provided.</param>
-    /// <returns>
-    /// A <see cref="ByteReader"/> containing the response data from the remote entity, or null if no response was received.
-    /// </returns>
-    /// <exception cref="AggregateException">Thrown if an error occurs while processing the remote request.</exception>
-    public ByteReader? SendRemoteSync(ushort remoteIndex, byte[]? data = null)
+    /// <param name="id">The unique identifier for the message being sent.</param>
+    /// <param name="data">The data payload to include in the message, represented as a <see cref="ByteWriter"/>.</param>
+    public void Send(ushort id, ByteWriter data)
     {
-        var tcs = new TaskCompletionSource<ByteReader?>();
+        Exceptions.NullArgument(nameof(data), data);
+        
+        SendWrapped(EntityHeader.Message, writer =>
+        {
+            writer.WriteUInt16(id);
+            writer.WriteWriter(data);
+        });
+    }
+
+    /// <summary>
+    /// Sends a wrapped message using the specified header and a data writer action that writes the message contents.
+    /// </summary>
+    /// <param name="header">The header that describes the type of the wrapped message.</param>
+    /// <param name="dataWriter">An action that writes the data of the message to the provided ByteWriter.</param>
+    public void SendWrapped(EntityHeader header, Action<ByteWriter> dataWriter)
+    {
+        Exceptions.NullArgument(nameof(dataWriter), dataWriter);
+
+        var writer = ByteWriter.Get();
 
         try
         {
-            SendRemoteCallback(remoteIndex, data, tcs.SetResult);
+            dataWriter(writer);
+
+            SendWrapped(header, writer);
         }
         catch (Exception ex)
         {
-            tcs.SetException(ex);
+            Log.Error($"Failed to send wrapped message:\n{ex}");
         }
 
-        while (!tcs.Task.IsCompleted)
-        {
-            Thread.Sleep(1);
-        }
-
-        if (tcs.Task.Exception != null)
-            throw tcs.Task.Exception;
-
-        return tcs.Task.Result;
+        writer.ReturnToPool();
     }
 
     /// <summary>
-    /// Sends a remote message asynchronously to the specified target using a custom writer action.
+    /// Sends a wrapped message containing the entity's ID and additional serialized data to the associated connection.
     /// </summary>
-    /// <param name="remoteIndex">The index of the remote method.</param>
-    /// <param name="writer">The action used to write data to the message payload using a <see cref="ByteWriter"/>.</param>
-    /// <returns>
-    /// A task that represents the asynchronous operation. The task result contains a <see cref="ByteReader"/> that can be used to read the response from the remote target, or null if no response is provided.
-    /// </returns>
-    /// <exception cref="AggregateException">Thrown if an error occurs during the message sending or processing.</exception>
-    public async Task<ByteReader?> SendRemoteAsync(ushort remoteIndex, Action<ByteWriter> writer)
+    /// <param name="header">The header type specifying the purpose of the message.</param>
+    /// <param name="writer">The <see cref="ByteWriter"/> instance containing the serialized data to be sent.</param>
+    public void SendWrapped(EntityHeader header, ByteWriter writer)
     {
-        var tcs = new TaskCompletionSource<ByteReader?>();
+        Exceptions.NullArgument(nameof(writer), writer);
 
-        try
-        {
-            SendRemoteCallback(remoteIndex, writer, tcs.SetResult);
-        }
-        catch (Exception ex)
-        {
-            tcs.SetException(ex);
-        }
+        var position = writer.Position;
 
-        var result = await tcs.Task;
-
-        if (tcs.Task.Exception != null)
-            throw tcs.Task.Exception;
-
-        return result;
-    }
-
-    /// <summary>
-    /// Sends a remote asynchronous request to a specific remote index with optional data.
-    /// </summary>
-    /// <param name="remoteIndex">The remote index of the method.</param>
-    /// <param name="data">The optional data to be sent to the remote index.</param>
-    /// <returns>A task that represents the asynchronous operation, containing the response as a <see cref="ByteReader"/> if available.</returns>
-    /// <exception cref="AggregateException">Thrown if the asynchronous operation encounters an exception.</exception>
-    public async Task<ByteReader?> SendRemoteAsync(ushort remoteIndex, byte[]? data = null)
-    {
-        var tcs = new TaskCompletionSource<ByteReader?>();
-
-        try
-        {
-            SendRemoteCallback(remoteIndex, data, tcs.SetResult);
-        }
-        catch (Exception ex)
-        {
-            tcs.SetException(ex);
-        }
-
-        var result = await tcs.Task;
-
-        if (tcs.Task.Exception != null)
-            throw tcs.Task.Exception;
-
-        return result;
-    }
-
-    /// <summary>
-    /// Sends a remote callback to the specified index with the provided writer and optional callback function.
-    /// </summary>
-    /// <param name="remoteIndex">
-    /// The index of the remote method.
-    /// </param>
-    /// <param name="writer">
-    /// An action that writes the required data for the remote operation using a <see cref="ByteWriter"/> instance.
-    /// </param>
-    /// <param name="callback">
-    /// An optional action that processes the response using a <see cref="ByteReader"/> instance, if available.
-    /// </param>
-    public void SendRemoteCallback(ushort remoteIndex, Action<ByteWriter> writer, Action<ByteReader?>? callback = null)
-    {
-        using var instance = ByteWriter.Get();
-
-        writer(instance);
-
-        SendRemoteCallback(remoteIndex, instance.ToArray(), callback);
-    }
-
-    /// <summary>
-    /// Sends a callback to a remote entity using the specified remote method index and optional data.
-    /// </summary>
-    /// <param name="remoteIndex">The index of the remote method to invoke.</param>
-    /// <param name="data">The optional data to be sent alongside the callback.</param>
-    /// <param name="callback">
-    /// The callback to execute upon receiving a response. If null, no response will be handled.
-    /// </param>
-    /// <exception cref="Exception">
-    /// Thrown if the entity has no associated <see cref="EntityInfo"/>,
-    /// if the entity has no remote methods (RPCs or CMDs),
-    /// or if the remote method index is out of range.
-    /// </exception>
-    public void SendRemoteCallback(ushort remoteIndex, byte[]? data = null, Action<ByteReader?>? callback = null)
-    {
-        if (Info == null)
-            throw new Exception("Entity has no info!");
-
-        var array = Manager.IsServer 
-            ? Info.Rpcs
-            : Info.Cmds;
+        writer.Position = 0;
         
-        if (array == null)
-            throw new Exception("Entity has no RPCs / CMDs!");
+        writer.WriteByte((byte)header);
+        writer.WriteUInt16(Id);
 
-        if (remoteIndex >= array.Count)
-            throw new Exception("Remote index out of range!");
-
-        var id = (byte)(callback != null ? conversations.FindIndex(x => x == null) : byte.MaxValue);
-
-        if (id != byte.MaxValue)
-            conversations[id] = callback;
-
-        Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, data));
+        writer.Position += position;
+        
+        Connection?.Send(new EntityWrappedMessage(Id, writer.ToArray()));
     }
 
-    /// <summary>
-    /// Sends a remote response to a specified remote index and optionally invokes a callback with the response.
-    /// </summary>
-    /// <typeparam name="TResponse">The type of the response expected from the remote call.</typeparam>
-    /// <param name="remoteIndex">The index of the remote method to invoke.</param>
-    /// <param name="callback">An optional callback action to handle the deserialized response.</param>
-    /// <exception cref="Exception">Thrown when the entity has no associated information, no remote methods, or the provided remote index is out of range.</exception>
-    public void SendRemoteResponse<TResponse>(ushort remoteIndex, Action<TResponse?>? callback = null)
+    internal void OnEntityWrappedMessage(EntityWrappedMessage msg)
     {
-        if (Info == null)
-            throw new Exception("Entity has no info!");
-
-        var array = Manager.IsServer 
-            ? Info.Rpcs
-            : Info.Cmds;
-        
-        if (array == null)
-            throw new Exception("Entity has no RPCs / CMDs!");
-
-        if (remoteIndex >= array.Count)
-            throw new Exception("Remote index out of range!");
-
-        var id = (byte)(callback != null ? conversations.FindIndex(x => x == null) : byte.MaxValue);
-
-        if (id != byte.MaxValue)
+        using (var reader = ObjectPool<ByteReader>.Shared.Rent())
         {
-            conversations[id] = reader =>
-            {
-                callback(reader.Read<TResponse>());
-            };
-        }
-        
-        Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, null));
-    }
-
-    /// <summary>
-    /// Sends a request to a remote method and optionally receives a response asynchronously.
-    /// </summary>
-    /// <typeparam name="TData">The type of the data to be sent to the remote method.</typeparam>
-    /// <typeparam name="TResponse">The type of the response expected from the remote method.</typeparam>
-    /// <param name="remoteIndex">The index of the remote method to invoke.</param>
-    /// <param name="data">The data to send to the remote method. Defaults to <c>default</c> if not provided.</param>
-    /// <param name="callback">An optional callback action that handles the response. The response is of type <typeparamref name="TResponse"/>.</param>
-    /// <exception cref="Exception">Thrown if the entity does not contain necessary information, if the remote index is out of range, or if the entity's remote methods are not defined.</exception>
-    public void SendRemoteResponse<TData, TResponse>(ushort remoteIndex, TData? data = default, Action<TResponse?>? callback = null)
-    {
-        if (Info == null)
-            throw new Exception("Entity has no info!");
-
-        var array = Manager.IsServer
-            ? Info.Rpcs
-            : Info.Cmds;
-        
-        if (array == null)
-            throw new Exception("Entity has no RPCs / CMDs!");
-
-        if (remoteIndex >= array.Count)
-            throw new Exception("Remote index out of range!");
-
-        var id = (byte)(callback != null ? conversations.FindIndex(x => x == null) : byte.MaxValue);
-
-        if (id != byte.MaxValue)
-        {
-            conversations[id] = reader =>
-            {
-                if (reader != null)
-                {
-                    callback(reader.Read<TResponse>());
-                }
-                else
-                {
-                    callback(default);
-                }
-            };
-        }
-
-        if (data != null)
-            Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, ByteWriter.GetArray(w => w.Write(data))));
-        else
-            Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, null));
-    }
-
-    /// <summary>
-    /// Sends a remote callback request with optional data and a callback function to be executed when a response is received.
-    /// </summary>
-    /// <param name="remoteIndex">The index of the remote method to be invoked.</param>
-    /// <param name="data">Optional data to send with the remote method invocation.</param>
-    /// <param name="callback">An optional callback function that will be executed upon receiving a response.</param>
-    /// <typeparam name="TData">The type of the data object being sent with the remote invocation.</typeparam>
-    /// <exception cref="Exception">
-    /// Thrown if the entity does not have associated information, the remote index is out of range, or the entity lacks RPCs or commands.
-    /// </exception>
-    public void SendRemoteCallback<TData>(ushort remoteIndex, TData? data = default, Action<ByteReader?>? callback = null)
-    {
-        if (Info == null)
-            throw new Exception("Entity has no info!");
-
-        var array = Manager.IsServer
-            ? Info.Rpcs
-            : Info.Cmds;
-        
-        if (array == null)
-            throw new Exception("Entity has no RPCs / CMDs!");
-
-        if (remoteIndex >= array.Count)
-            throw new Exception("Remote index out of range!");
-
-        var id = (byte)(callback != null ? conversations.FindIndex(x => x == null) : byte.MaxValue);
-
-        if (id != byte.MaxValue)
-            conversations[id] = callback;
-        
-        if (data != null)
-            Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, ByteWriter.GetArray(w => w.Write(data))));
-        else
-            Manager.Send(new EntityInvokeMessage(id, !Manager.IsClient, Id, (short)remoteIndex, null));
-    }
-
-    internal void OnEntitySyncVarMessage(EntitySyncVarMessage msg)
-    {
-        if (msg.Index >= Info.SyncVars.Count)
-        {
-            Manager.Log.Warn($"SyncVar index {msg.Index} is out of range!");
-            return;
-        }
-
-        if (msg.Data?.Length < 1)
-        {
-            Manager.Log.Warn("Received syncvar message with null data!");
-            return;
-        }
-
-        try
-        {
-            using var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length);
+            reader.Buffer = msg.Data;
+            reader.Count = msg.Data.Length;
+            reader.Position = 0;
             
-            var syncVar = Info.SyncVars[msg.Index];
+            var headerByte = reader.ReadByte();
 
-            var newValue = syncVar.Reader.Invoke(syncVar.ReaderTarget, [reader]);
-            var curValue = syncVar.Field.GetValue(this);
-
-            syncVar.Field.SetValue(this, newValue);
-            syncVar.Hook?.Invoke(this, [curValue, newValue]);
-        }
-        catch (Exception ex)
-        {
-            Manager.Log.Error($"Error while updating syncvar:\n{ex}");
-        }
-    }
-
-    internal void OnEntityInvokeMessage(EntityInvokeMessage msg)
-    {
-        if (Manager.IsServer && msg.Rpc)
-        {
-            Manager.Log.Warn("Received RPC on server!");
-            return;
-        }
-
-        if (Manager.IsClient && !msg.Rpc)
-        {
-            Manager.Log.Warn("Received CMD on client!");
-            return;       
-        }
-        
-        msg.Data ??= Array.Empty<byte>();
-        
-        if (msg.Index < 0) // REPLY
-        {
-            if (msg.Id == byte.MaxValue) // 255 is reserved for a null callback
+            if (!Enum.IsDefined(typeof(EntityHeader), headerByte))
             {
-                Manager.Log.Warn("Returned reply without a registered callback!");
+                Log.Warn($"Received invalid entity header byte: {headerByte}");
                 return;
             }
-            
-            var callback = conversations[msg.Id];
-
-            if (callback == null)
-            {
-                Manager.Log.Warn("Returned reply with a null callback!");
-                return;
-            }
-            
-            conversations[msg.Id] = null;
 
             try
             {
-                if (msg.Data?.Length > 0)
+                var header = (EntityHeader)headerByte;
+
+                if (header is EntityHeader.Message)
                 {
-                    using (var reader = ByteReader.Get(msg.Data!, 0, msg.Data.Length))
+                    var msgId = reader.ReadUInt16();
+
+                    if (!handlers.TryGetValue(msgId, out var messageHandler))
                     {
-                        callback(reader);
+                        Log.Warn($"Received unknown message ID: &3{msgId}&r");
+                        return;
                     }
+
+                    messageHandler(reader);
+                }
+                else if (header is EntityHeader.Method)
+                {
+                    SyncParent.OnMethodMessage(reader);
+                }
+                else if (header is EntityHeader.Response)
+                {
+                    SyncParent.OnResponseMessage(reader);
+                }
+                else if (header is EntityHeader.SyncVar)
+                {
+                    SyncParent.OnSyncVarMessage(reader);
+                }
+                else if (header is EntityHeader.SyncParentMessage)
+                {
+                    SyncParent.OnSyncParentMessage(reader);
+                }
+                else if (header is EntityHeader.SyncObjectPayload)
+                {
+                    SyncParent.OnSyncObjectPayload(reader);
                 }
                 else
                 {
-                    callback(null);
+                    Log.Warn($"Received unknown header: &3{header}&r");
                 }
             }
             catch (Exception ex)
             {
-                Manager.Log.Error($"Failed to read reply data:\n{ex}");
+                Log.Error($"Error while handling message &3{headerByte}&r:\n{ex}");
             }
         }
-        else
-        {
-            var array = msg.Rpc 
-                ? Info.Rpcs 
-                : Info.Cmds;
-            
-            if (msg.Index >= array.Count)
-            {
-                Manager.Log.Warn($"RPC/CMD index {msg.Index} is out of range!");
-                return;
-            }
-            
-            var invoke = array[msg.Index];
+    }
 
-            try
-            {
-                if (invoke.IsReader)
-                {
-                    if (invoke.HasReturnValue && invoke.ReturnWriter != null)
-                    {
-                        using (var writer = ByteWriter.Get())
-                        using (var reader = ByteReader.Get(msg.Data, 0, msg.Data.Length))
-                        {
-                            var result = invoke.Target.Invoke(this, [reader]);
-                            
-                            invoke.ReturnWriter.Invoke(writer, [result]);
-                            
-                            if (msg.Id != 255)
-                                Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1, writer.ToArray()));
-                        }
-                    }
-                    else
-                    {
-                        using (var reader = ByteReader.Get(msg.Data, 0, msg.Data.Length))
-                            invoke.Target.Invoke(this, [reader]);
-
-                        if (msg.Id != 255)
-                            Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1));
-                    }
-                }
-                else if (invoke.IsReaderWriter)
-                {
-                    using (var writer = ByteWriter.Get())
-                    using (var reader = ByteReader.Get(msg.Data, 0, msg.Data.Length))
-                    {
-                        invoke.Target.Invoke(this, [reader, writer]);
-                        
-                        if (msg.Id != 255)
-                            Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1, writer.ToArray()));
-                    }
-                }
-                else if (invoke.ParameterReaders?.Length > 0)
-                {
-                    if (invoke.HasReturnValue && invoke.ReturnWriter != null)
-                    {
-                        using (var writer = ByteWriter.Get())
-                        using (var reader = ByteReader.Get(msg.Data, 0, msg.Data.Length))
-                        {
-                            var args = new object[invoke.ParameterReaders.Length];
-                            
-                            for (var x = 0; x < invoke.ParameterReaders.Length; x++)
-                                args[x] = invoke.ParameterReaders[x].Invoke(reader, null);
-                            
-                            var result = invoke.Target.Invoke(this, args);
-                            
-                            invoke.ReturnWriter.Invoke(writer, [result]);
-                            
-                            if (msg.Id != 255)
-                                Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1, writer.ToArray()));
-                        }
-                    }
-                    else
-                    {
-                        using (var reader = ByteReader.Get(msg.Data, 0, msg.Data.Length))
-                        {
-                            var args = new object[invoke.ParameterReaders.Length];
-                            
-                            for (var x = 0; x < invoke.ParameterReaders.Length; x++)
-                                args[x] = invoke.ParameterReaders[x].Invoke(reader, null);
-                            
-                            invoke.Target.Invoke(this, args);
-                            
-                            if (msg.Id != 255)
-                                Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1));
-                        }
-                    }
-                }
-                else
-                {
-                    Manager.Log.Error($"Remote method contains an invalid signature: &1{invoke.Target}&r");
-                }
-            }
-            catch (Exception ex)
-            {
-                Manager.Log.Error(ex);
-
-                if (msg.Id != 255) // respond with no data to avoid deadlocks on remote
-                    Manager.Send(new EntityInvokeMessage(msg.Id, !Manager.IsClient, Id, -1));
-            }
-        }
+    private void CommonSetup()
+    {
+        SyncParent = new(this, false);
     }
 }

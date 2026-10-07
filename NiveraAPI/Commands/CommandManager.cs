@@ -1,13 +1,16 @@
 ﻿using System.Reflection;
+
 using NiveraAPI.Commands.API;
-using NiveraAPI.Commands.Attributes;
-using NiveraAPI.Commands.Awaiters;
 using NiveraAPI.Commands.Enums;
-using NiveraAPI.Commands.Interfaces;
 using NiveraAPI.Commands.Results;
-using NiveraAPI.Extensions;
+using NiveraAPI.Commands.Awaiters;
+using NiveraAPI.Commands.Attributes;
+using NiveraAPI.Commands.Interfaces;
+
 using NiveraAPI.Logs;
 using NiveraAPI.Pooling;
+using NiveraAPI.Extensions;
+
 using NiveraAPI.TokenParsing;
 using NiveraAPI.TypeParsing;
 using NiveraAPI.TypeParsing.API;
@@ -33,22 +36,12 @@ public class CommandManager<TSender> where TSender : class
     /// during the registration, processing, and execution of commands.
     /// </summary>
     public static bool CMD_DEBUG;
-    
+
     /// <summary>
-    /// Represents a delegate used to construct an instance of <see cref="IAwaiter{TSender}"/>
-    /// in the context of a command execution.
+    /// Represents a delegate used to construct an instance of an awaiter for a command's result type in the context of a command execution.
     /// </summary>
-    /// <typeparam name="TSender">
-    /// The type of the sender executing the command. Must be a reference type.
-    /// </typeparam>
-    /// <param name="context">
-    /// The <see cref="CommandContext{TSender}"/> that provides information about
-    /// the command execution, including the sender, command arguments, and related metadata.
-    /// </param>
-    /// <returns>
-    /// An instance of <see cref="IAwaiter{TSender}"/> associated with the specified
-    /// command execution context.
-    /// </returns>
+    /// <param name="context">The <see cref="CommandContext{TSender}"/> that provides information about the command execution, including the sender, command arguments, and related metadata.</param>
+    /// <returns>An instance of <see cref="IAwaiter{TSender}"/> associated with the specified command execution context.</returns>
     public delegate IAwaiter<TSender> AwaiterConstructor(CommandContext<TSender> context);
     
     /// <summary>
@@ -62,22 +55,13 @@ public class CommandManager<TSender> where TSender : class
     public delegate bool PermissionsChecker(CommandContext<TSender> context);
 
     /// <summary>
-    /// Represents a delegate method intended to process a specific sub-attribute associated with a parameter within a command.
+    /// Represents a delegate used to process sub-attributes associated with a command parameter during command registration or execution.
     /// </summary>
-    /// <param name="method">
-    /// The <see cref="MethodInfo"/> instance representing the method where the sub-attribute is defined.
-    /// </param>
-    /// <param name="parameter">
-    /// The parameter metadata of the command that is being processed.
-    /// </param>
-    /// <param name="attributes">
-    /// The attributes of the command parameter being analyzed.
-    /// </param>
-    /// <param name="attribute">
-    /// The <see cref="ParameterSubAttribute"/> instance applied to the parameter, indicating the sub-attribute to be processed.
-    /// </param>
-    public delegate void ProcessSubAttribute(MethodInfo method, CommandParameter parameter, 
-        CommandParameter.ParameterAttributes attributes, ParameterSubAttribute attribute);
+    /// <param name="method">The <see cref="MethodInfo"/> instance representing the method where the sub-attribute is defined.</param>
+    /// <param name="parameter">The parameter metadata of the command that is being processed.</param>
+    /// <param name="attributes">The attributes of the command parameter being analyzed.</param>
+    /// <param name="attribute">The <see cref="ParameterSubAttribute"/> instance applied to the parameter, indicating the sub-attribute to be processed.</param>
+    public delegate void ProcessSubAttribute(MethodInfo method, CommandParameter parameter, CommandParameter.ParameterAttributes attributes, ParameterSubAttribute attribute);
     
     private List<CommandInfo<TSender>> commands = new();
     
@@ -367,24 +351,13 @@ public class CommandManager<TSender> where TSender : class
 
         return CommandRegisterError.OverloadsEmpty;
     }
-    
+
     /// <summary>
-    /// Registers a new command within the command manager.
+    /// Registers a new command in the command manager.
     /// </summary>
     /// <param name="command">The command information object containing details about the command to be registered.</param>
-    /// <returns>
-    /// A value of type <see cref="CommandRegisterError"/> that represents the result of the registration operation.
-    /// Possible return values include:
-    /// <list type="bullet">
-    /// <item><see cref="CommandRegisterError.Ok"/> if the command was successfully registered.</item>
-    /// <item><see cref="CommandRegisterError.CommandExists"/> if a command with the same name and flags already exists.</item>
-    /// <item><see cref="CommandRegisterError.OverloadsEmpty"/> if the command has no associated overloads.</item>
-    /// <item><see cref="CommandRegisterError.NoConstructor"/> if the command is not static and no constructor is provided.</item>
-    /// </list>
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown if the provided <paramref name="command"/> is null.
-    /// </exception>
+    /// <returns>A value of type <see cref="CommandRegisterError"/> that represents the result of the registration operation.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if the provided <paramref name="command"/> is null.</exception>
     public CommandRegisterError RegisterCommand(CommandInfo<TSender> command)
     {
         if (command == null)
@@ -420,17 +393,12 @@ public class CommandManager<TSender> where TSender : class
     }
 
     /// <summary>
-    /// Registers a new command overload for the specified command.
+    /// Registers a new overload for an existing command.
     /// </summary>
     /// <param name="command">The command to which the overload should be added.</param>
     /// <param name="overload">The overload to add to the command.</param>
-    /// <returns>
-    /// A boolean value indicating whether the overload was successfully registered.
-    /// Returns false if an overload with the same full name already exists for the command.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown if the provided <paramref name="command"/> or <paramref name="overload"/> is null.
-    /// </exception>
+    /// <returns>A boolean value indicating whether the overload was successfully registered.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if the provided <paramref name="command"/> or <paramref name="overload"/> is null.</exception>
     public bool RegisterOverload(CommandInfo<TSender> command, CommandOverload<TSender> overload)
     {
         if (command == null)
@@ -451,18 +419,13 @@ public class CommandManager<TSender> where TSender : class
     }
 
     /// <summary>
-    /// Registers a new overload for an existing command based on the specified parameters.
+    /// Registers a new overload for an existing command identified by its name and optional flags.
     /// </summary>
     /// <param name="command">The name of the command to which the overload will be added.</param>
     /// <param name="flags">Optional flags used to refine the search for the command, such as attributes or matching criteria.</param>
     /// <param name="overload">The overload instance to be registered with the command.</param>
-    /// <returns>
-    /// A boolean value indicating whether the overload was successfully registered.
-    /// Returns false if the command is not found, the overload is null, or the overload already exists.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown if the provided <paramref name="overload"/> is null.
-    /// </exception>
+    /// <returns>A boolean value indicating whether the overload was successfully registered.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if the provided <paramref name="overload"/> is null.</exception>
     public bool RegisterOverload(string command, object[]? flags, CommandOverload<TSender> overload)
     {
         if (string.IsNullOrEmpty(command))
@@ -504,17 +467,12 @@ public class CommandManager<TSender> where TSender : class
     }
 
     /// <summary>
-    /// Unregisters a specific overload from the provided command.
+    /// Unregisters an overload from the specified command based on the overload's full name.
     /// </summary>
     /// <param name="command">The command from which the overload will be unregistered.</param>
     /// <param name="overload">The full name of the overload to unregister.</param>
-    /// <returns>
-    /// A boolean value indicating whether the overload was successfully unregistered.
-    /// Returns false if the overload is not found or if the provided overload name is null or empty.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown if the provided <paramref name="command"/> is null.
-    /// </exception>
+    /// <returns>A boolean value indicating whether the overload was successfully unregistered.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if the provided <paramref name="command"/> is null.</exception>
     public bool UnregisterOverload(CommandInfo<TSender> command, string overload)
     {
         if (command == null)
@@ -538,16 +496,11 @@ public class CommandManager<TSender> where TSender : class
     }
 
     /// <summary>
-    /// Unregisters the specified command from the command manager.
+    /// Unregisters a command from the command manager.
     /// </summary>
     /// <param name="command">The command to be unregistered.</param>
-    /// <returns>
-    /// A boolean value indicating whether the command was successfully unregistered.
-    /// Returns false if the command does not exist in the manager.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown if the provided <paramref name="command"/> is null.
-    /// </exception>
+    /// <returns>A boolean value indicating whether the command was successfully unregistered.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if the provided <paramref name="command"/> is null.</exception>
     public bool UnregisterCommand(CommandInfo<TSender> command)
     {
         if (command == null)
@@ -563,11 +516,9 @@ public class CommandManager<TSender> where TSender : class
     }
 
     /// <summary>
-    /// Unregisters all commands currently registered in the command manager.
+    /// Unregisters all commands from the command manager, clearing the command registry.
     /// </summary>
-    /// <returns>
-    /// The total number of commands that were unregistered.
-    /// </returns>
+    /// <returns>The total number of commands that were unregistered.</returns>
     public int UnregisterCommands()
     {
         var count = commands.Count;
@@ -579,15 +530,11 @@ public class CommandManager<TSender> where TSender : class
     }
 
     /// <summary>
-    /// Unregisters all commands associated with the specified assembly.
+    /// Unregisters all commands associated with the specified assembly from the command manager.
     /// </summary>
     /// <param name="assembly">The assembly containing the commands to be unregistered.</param>
-    /// <returns>
-    /// The number of commands successfully unregistered from the command manager.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown if the provided <paramref name="assembly"/> is null.
-    /// </exception>
+    /// <returns>The number of commands successfully unregistered from the command manager.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if the provided <paramref name="assembly"/> is null.</exception>
     public int UnregisterCommands(Assembly assembly)
     {
         if (assembly == null)
@@ -615,13 +562,8 @@ public class CommandManager<TSender> where TSender : class
     /// Unregisters a command associated with the specified type from the command manager.
     /// </summary>
     /// <param name="type">The type associated with the command to be unregistered.</param>
-    /// <returns>
-    /// A boolean value indicating whether the command was successfully unregistered.
-    /// Returns false if no command is associated with the specified type.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown if the provided <paramref name="type"/> is null.
-    /// </exception>
+    /// <returns>true if the command was successfully unregistered, false otherwise.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if the provided <paramref name="type"/> is null.</exception>
     public bool UnregisterCommand(Type type)
     {
         if (type == null)
@@ -631,17 +573,11 @@ public class CommandManager<TSender> where TSender : class
     }
 
     /// <summary>
-    /// Unregisters a command identified by its name and optional flags from the command manager.
+    /// Unregisters a command by its name and optional flags from the command manager.
     /// </summary>
     /// <param name="name">The name of the command to be unregistered. Must be non-null and non-empty.</param>
     /// <param name="flags">Optional flags used to locate the command variant. Can be null to search without flags.</param>
-    /// <returns>
-    /// A boolean value indicating whether the command was successfully unregistered.
-    /// Returns false if no matching command was found.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown if the provided <paramref name="name"/> is null or empty.
-    /// </exception>
+    /// <returns>true if the command was successfully unregistered, false otherwise.</returns>
     public bool UnregisterCommand(string name, object[]? flags = null)
     {
         if (!TryGetCommand(name, flags, out var command, out _))
@@ -657,19 +593,13 @@ public class CommandManager<TSender> where TSender : class
     }
 
     /// <summary>
-    /// Attempts to retrieve a command overload that matches the specified name and flags.
+    /// Attempts to retrieve a command overload based on the provided name and optional flags.
     /// </summary>
     /// <param name="name">The name of the command to search for.</param>
     /// <param name="flags">An optional array of flags to filter the commands being searched.</param>
     /// <param name="overload">When this method returns, contains the matching command overload, if found; otherwise, null.</param>
     /// <param name="cleanQuery">The remaining query string after removing the command name.</param>
-    /// <returns>
-    /// A boolean value indicating whether a matching command overload was found.
-    /// Returns true if a matching overload is located; otherwise, false.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown if the provided <paramref name="name"/> is null.
-    /// </exception>
+    /// <returns>true if a matching command overload was found, false otherwise.</returns>
     public bool TryGetOverload(string name, object[]? flags, out CommandOverload<TSender>? overload, out string? cleanQuery)
     {
         overload = null;
@@ -782,19 +712,13 @@ public class CommandManager<TSender> where TSender : class
     }
 
     /// <summary>
-    /// Tries to retrieve a command by its name from the command manager's registry.
+    /// Attempts to retrieve a command based on the provided name and optional flags.
     /// </summary>
-    /// <param name="name">The name of the command to retrieve. Comparison is case-insensitive.</param>
-    /// <param name="flags">Optional array of flags to filter the commands being queried.</param>
-    /// <param name="command">
-    /// When this method returns, contains the command associated with the specified name if the command exists;
-    /// otherwise, null. This parameter is passed uninitialized.
-    /// </param>
+    /// <param name="name">The name of the command to search for.</param>
+    /// <param name="flags">An optional array of flags to filter the commands being searched.</param>
+    /// <param name="command">When this method returns, contains the matching command, if found; otherwise, null.</param>
     /// <param name="cleanQuery">The remaining query string after removing the command name.</param>
-    /// <returns>
-    /// A boolean value indicating whether a command with the specified name was found.
-    /// Returns false if the name is null, empty, or no matching command exists.
-    /// </returns>
+    /// <returns>true if a matching command was found, false otherwise.</returns>
     public bool TryGetCommand(string name, object[]? flags, out CommandInfo<TSender>? command, out string? cleanQuery)
     {
         command = null;
@@ -937,8 +861,7 @@ public class CommandManager<TSender> where TSender : class
 
                 if (result.ParsedArgs.Value.Results.Count != result.Overload.NoContextParameterCount)
                 {
-                    SetErrorAndPool(new ErrorResult($"Parsed arguments count does not match expected count for command '{result.Command.FullName}'"),
-                        args, ref result);
+                    SetErrorAndPool(new ErrorResult($"Parsed arguments count does not match expected count for command '{result.Command.FullName}'"), args, ref result);
                     return;
                 }
 
@@ -950,22 +873,19 @@ public class CommandManager<TSender> where TSender : class
 
                     if (value.Exception != null)
                     {
-                        SetErrorAndPool(new ErrorResult($"Error parsing argument {x + 1} for command '{result.Command.FullName}': {value.Exception.Message}"), 
-                            args, ref result);
+                        SetErrorAndPool(new ErrorResult($"Error parsing argument {x + 1} for command '{result.Command.FullName}': {value.Exception.Message}"),  args, ref result);
                         return;
                     }
 
                     if (!value.IsValid)
                     {
-                        SetErrorAndPool(new ErrorResult($"Invalid argument {x + 1} for command '{result.Command.FullName}': {value.Exception?.Message ?? "No exception message"}"),
-                            args, ref result);
+                        SetErrorAndPool(new ErrorResult($"Invalid argument {x + 1} for command '{result.Command.FullName}': {value.Exception?.Message ?? "No exception message"}"), args, ref result);
                         return;
                     }
                     
                     if (value.Result is NamedParameter namedParameter)
                     {
-                        var index = result.Overload.MethodParameters
-                            .FindIndex(p => string.Equals(namedParameter.Name, p.Name, StringComparison.OrdinalIgnoreCase));
+                        var index = result.Overload.MethodParameters.FindIndex(p => string.Equals(namedParameter.Name, p.Name, StringComparison.OrdinalIgnoreCase));
 
                         if (index == -1)
                         {

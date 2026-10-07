@@ -20,11 +20,6 @@ public struct EntitySpawnMessage : ISerializableObject
     public ushort Id;
 
     /// <summary>
-    /// The list of command methods on the server side.
-    /// </summary>
-    public string[] Cmds;
-
-    /// <summary>
     /// Creates a new instance of the EntitySpawnMessage class.
     /// </summary>
     public EntitySpawnMessage(string type, ushort id)
@@ -46,17 +41,6 @@ public struct EntitySpawnMessage : ISerializableObject
     {
         writer.WriteString(Type);
         writer.WriteUInt16(Id);
-
-        if (Cmds is null)
-        {
-            writer.WriteByte(0);
-            return;
-        }
-        
-        writer.WriteByte((byte)Cmds.Length);
-
-        for (var x = 0; x < Cmds.Length; x++)
-            writer.WriteString(Cmds[x]);
     }
     
     /// <summary>
@@ -67,12 +51,5 @@ public struct EntitySpawnMessage : ISerializableObject
     {
         Type = reader.ReadString();
         Id = reader.ReadUInt16();
-
-        var count = reader.ReadByte();
-        
-        Cmds = new string[count];
-
-        for (var x = 0; x < count; x++) 
-            Cmds[x] = reader.ReadString();
     }
 }

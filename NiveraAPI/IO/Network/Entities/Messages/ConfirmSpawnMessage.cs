@@ -13,11 +13,6 @@ public struct ConfirmSpawnMessage : ISerializableObject
     /// The ID of the entity to confirm spawn for.
     /// </summary>
     public ushort Id = 0;
-
-    /// <summary>
-    /// The list of remote procedure calls (RPCs) on the client side.
-    /// </summary>
-    public string[] Rpcs;
     
     /// <summary>
     /// Creates a new instance of the ConfirmSpawnMessage class.
@@ -40,17 +35,6 @@ public struct ConfirmSpawnMessage : ISerializableObject
     public void Serialize(ByteWriter writer)
     {
         writer.WriteUInt16(Id);
-
-        if (Rpcs is null)
-        {
-            writer.WriteByte(0);
-            return;
-        }
-        
-        writer.WriteByte((byte)Rpcs.Length);
-
-        for (var x = 0; x < Rpcs.Length; x++)
-            writer.WriteString(Rpcs[x]);
     }
     
     /// <summary>
@@ -60,12 +44,5 @@ public struct ConfirmSpawnMessage : ISerializableObject
     public void Deserialize(ByteReader reader)
     {
         Id = reader.ReadUInt16();
-        
-        var count = reader.ReadByte();
-        
-        Rpcs = new string[count];
-
-        for (var x = 0; x < count; x++)
-            Rpcs[x] = reader.ReadString();
     }
 }

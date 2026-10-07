@@ -5,7 +5,7 @@ namespace NiveraAPI.IO.Network.API;
 /// <summary>
 /// Represents a message that has been retransmitted.
 /// </summary>
-public struct RetransmittedMessage
+public readonly struct RetransmittedMessage
 {
     /// <summary>
     /// The amount of retransmissions that have occured.

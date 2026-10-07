@@ -5,6 +5,8 @@ using NiveraAPI.IO.Network.Entities.Messages;
 using NiveraAPI.IO.Serialization;
 using NiveraAPI.IO.Serialization.Interfaces;
 
+using NiveraAPI.Utilities;
+
 namespace NiveraAPI.IO.Network.Entities;
 
 /// <summary>
@@ -13,164 +15,117 @@ namespace NiveraAPI.IO.Network.Entities;
 /// </summary>
 public class EntityManager : NetService
 {
+    /// <summary>
+    /// Represents detailed information about an entity, including its type classification,
+    /// network mapping, and a factory method for constructing instances.
+    /// Used primarily within the context of entity management in a networked environment.
+    /// </summary>
+    public struct EntityInfo
+    {
+        /// <summary>
+        /// Represents the local type of the entity, which is used for internal identification and classification
+        /// within the system for managing entity-specific logic and behavior.
+        /// </summary>
+        public readonly string LocalType;
+
+        /// <summary>
+        /// Represents the remote type of the entity, which is used for network identification and mapping of entity logic
+        /// across different systems or instances.
+        /// </summary>
+        public readonly string? RemoteType;
+
+        /// <summary>
+        /// Represents a type of an entity in the system. Used to associate the entity's logic with its type information.
+        /// </summary>
+        public readonly Type Type;
+
+        /// <summary>
+        /// Defines a delegate that serves as a constructor function for creating new instances of entities.
+        /// </summary>
+        public readonly Func<Entity> Constructor;
+        
+        /// <summary>
+        /// Creates a new instance of the <see cref="EntityInfo"/> struct.
+        /// </summary>
+        /// <param name="localType">The local type of the entity.</param>
+        /// <param name="remoteType">The remote type of the entity.</param>
+        /// <param name="type">The type of the entity.</param>
+        /// <param name="constructor">The constructor function for creating the entity.</param>
+        public EntityInfo(string localType, string? remoteType, Type type, Func<Entity> constructor)
+        {
+            LocalType = localType;
+            RemoteType = remoteType;
+            Type = type;
+            Constructor = constructor;
+        }
+    }
+
     static EntityManager()
     {
-        constructors = new();
-        
         ObjectSerializer.RegisterDefaultSerializer<EntitySpawnMessage>(() => new());
         ObjectSerializer.RegisterDefaultSerializer<EntityDestroyMessage>(() => new());
-        ObjectSerializer.RegisterDefaultSerializer<EntityInvokeMessage>(() => new());
-        ObjectSerializer.RegisterDefaultSerializer<EntitySyncVarMessage>(() => new());
+        ObjectSerializer.RegisterDefaultSerializer<EntityWrappedMessage>(() => new());
         ObjectSerializer.RegisterDefaultSerializer<ConfirmSpawnMessage>(() => new());
     }
-
-    private static readonly Dictionary<string, Func<Entity>> constructors;
     
-    /// <summary>
-    /// Gets the number of entities that have been registered in the entity manager.
-    /// </summary>
-    public static int RegisteredEntityCount => constructors.Count;
+    private static readonly List<EntityInfo> registeredEntities = new();
 
     /// <summary>
-    /// Determines whether an entity of the specified type is registered.
+    /// Provides a mapping of entity types to their respective constructors,
+    /// enabling the dynamic creation of entities in the networking context.
     /// </summary>
-    /// <typeparam name="T">The type of the entity to check for registration.</typeparam>
-    /// <returns>
-    /// True if the entity type is registered; otherwise, false.
-    /// </returns>
-    public static bool IsRegistered<T>() where T : Entity
-        => constructors.ContainsKey(typeof(T).FullName);
+    public static IReadOnlyList<EntityInfo> RegisteredEntities => registeredEntities;
 
     /// <summary>
-    /// Determines whether an entity of the specified type is registered in the system.
+    /// Registers a new entity type with the given remote and local identifiers and a constructor function.
     /// </summary>
-    /// <param name="type">The type of the entity to check for registration.</param>
-    /// <returns>
-    /// True if the entity type is registered; otherwise, false.
-    /// </returns>
-    public static bool IsRegistered(Type type)
-        => type != null && constructors.ContainsKey(type.FullName);
-    
-    /// <summary>
-    /// Registers an entity of the specified type with the provided constructor.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity to register.</typeparam>
+    /// <typeparam name="TEntity">The type of the entity to register, which must inherit from <see cref="Entity"/>.</typeparam>
+    /// <param name="remoteType">The remote type identifier for the entity.</param>
+    /// <param name="localType">The local type identifier for the entity.</param>
     /// <param name="constructor">A function that constructs an instance of the entity.</param>
-    /// <returns>
-    /// True if the entity type was successfully registered; otherwise, false.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when the provided constructor is null.
-    /// </exception>
-    public static bool RegisterEntity<T>(Func<Entity> constructor) where T : Entity
+    /// <returns>True if the registration was successful; otherwise, false.</returns>
+    public static bool RegisterEntity<TEntity>(string? remoteType, string? localType, Func<Entity> constructor) where TEntity : Entity
     {
-        if (constructor == null)
-            throw new ArgumentNullException(nameof(constructor));
+        Exceptions.NullArgument(nameof(constructor), constructor);
+        return RegisterEntity(remoteType, localType, typeof(TEntity), constructor);
+    }
 
-        var type = typeof(T);
+    /// <summary>
+    /// Registers a new entity type with the specified local and optional remote type.
+    /// </summary>
+    /// <param name="remoteType">The optional remote identifier for the entity type. This can be null or empty if not used.</param>
+    /// <param name="localType">The local identifier for the entity type. This value must not be null or empty.</param>
+    /// <param name="type">The type of the entity being registered. This value must not be null.</param>
+    /// <param name="constructor">The constructor function used to create instances of the entity. This value must not be null.</param>
+    /// <returns>
+    /// A boolean value indicating whether the entity was successfully registered.
+    /// Returns true if the entity was registered, or false if an entity with the same local type already exists.
+    /// </returns>
+    public static bool RegisterEntity(string? remoteType, string? localType, Type type, Func<Entity> constructor)
+    {
+        Exceptions.NullArgument(nameof(type), type);
+        Exceptions.NullArgument(nameof(constructor), constructor);
         
-        if (constructors.ContainsKey(type.FullName))
+        if (registeredEntities.Any(x => x.Type == type))
             return false;
-        
-        constructors[type.FullName] = constructor;
 
-        var info = EntityInfo.GetInfo(type);
+        if (string.IsNullOrWhiteSpace(localType))
+            localType = type.ToString();
         
-        constructors[info.RemoteTypeName(true)] = constructor;
-        constructors[info.RemoteTypeName(false)] = constructor;
+        if (string.IsNullOrWhiteSpace(remoteType))
+            remoteType = localType;
 
+        registeredEntities.Add(new EntityInfo(localType!, remoteType, type, constructor));
         return true;
-    }
-
-    /// <summary>
-    /// Registers an entity type along with its construction logic.
-    /// </summary>
-    /// <param name="type">The type of the entity to register.</param>
-    /// <param name="constructor">A delegate that provides the construction logic for the entity.</param>
-    /// <returns>
-    /// True if the entity type was successfully registered; otherwise, false if it was already registered.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">Thrown when the <paramref name="constructor"/> is null.</exception>
-    public static bool RegisterEntity(Type type, Func<Entity> constructor)
-    {
-        if (constructor == null)
-            throw new ArgumentNullException(nameof(constructor));
-
-        if (constructors.ContainsKey(type.FullName))
-            return false;
-        
-        constructors[type.FullName] = constructor;
-
-        var info = EntityInfo.GetInfo(type);
-        
-        constructors[info.RemoteTypeName(true)] = constructor;
-        constructors[info.RemoteTypeName(false)] = constructor;
-
-        return true;
-    }
-
-    /// <summary>
-    /// Unregisters an entity of the specified type.
-    /// </summary>
-    /// <typeparam name="T">The type of the entity to unregister.</typeparam>
-    /// <returns>
-    /// True if the entity type was successfully unregistered; otherwise, false.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when the specified type is null.
-    /// </exception>
-    public static bool UnregisterEntity<T>() where T : Entity
-    {
-        if (constructors.Remove(typeof(T).FullName))
-        {
-            var info = EntityInfo.GetInfo(typeof(T));
-
-            constructors.Remove(info.RemoteTypeName(true));
-            constructors.Remove(info.RemoteTypeName(false));
-
-            return true;
-        }
-        
-        return false;
-    }
-
-    /// <summary>
-    /// Unregisters an entity of the specified type.
-    /// </summary>
-    /// <param name="type">The type of the entity to unregister.</param>
-    /// <returns>
-    /// True if the entity type was successfully unregistered; otherwise, false.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when the specified type is null.
-    /// </exception>
-    public static bool UnregisterEntity(Type type)
-    {
-        if (type == null)
-            throw new ArgumentNullException(nameof(type));
-
-        if (constructors.Remove(type.FullName))
-        {
-            var info = EntityInfo.GetInfo(type);
-
-            constructors.Remove(info.RemoteTypeName(true));
-            constructors.Remove(info.RemoteTypeName(false));
-
-            return true;
-        }
-        
-        return false;
     }
     
     private ushort idEnumerator = 0;
-
-    private List<Type> entitySent = new();
     private List<Entity> entities = new();
 
     /// <summary>
     /// Whether or not to log debug messages.
     /// </summary>
-    public bool DebugLogs { get; set; }
+    public bool DebugLogs => Connection?.DebugLogs ?? false;
     
     /// <summary>
     /// Gets the time elapsed in the local timer since the last update, in seconds.
@@ -325,7 +280,6 @@ public class EntityManager : NetService
         idEnumerator = 0;
         
         entities.Clear();
-        entitySent.Clear();
     }
 
     /// <summary>
@@ -350,10 +304,10 @@ public class EntityManager : NetService
                 {
                     var entity = entities[x];
                     
-                    if (entity.destroyed || !entity.confirmed)
+                    if (entity.IsDestroyed || !entity.IsConfirmed)
                         continue;
                     
-                    entity.OnUpdate(localDeltaTime, networkDeltaTime);
+                    entity.OnUpdate();
                 }
                 catch (Exception ex)
                 {
@@ -379,48 +333,15 @@ public class EntityManager : NetService
     /// <exception cref="InvalidOperationException">Thrown when attempting to destroy an entity on the client. </exception>
     public bool DestroyEntity(Entity entity)
     {
-        if (entity == null)
-            throw new ArgumentNullException(nameof(entity));
-        
-        if (!IsServer)
-            throw new InvalidOperationException("Cannot destroy entity on client.");
-
-        if (entity.destroyed)
+        if (LocalDestroy(entity) && IsConnected)
         {
-            Log.Warn($"Attempted to destroy already destroyed entity: &1{entity.Id}&r");
-            return false;
+            Log.DebugIf($"Entity &1{entity.Id}&r destroyed, sending message to client ..", DebugLogs);
+
+            Send(new EntityDestroyMessage(entity.Id));
+            return true;
         }
 
-        if (entity.Manager == null)
-        {
-            Log.Warn($"Attempted to destroy entity with no manager: &1{entity.Id}&r");
-            return false;
-        }
-
-        if (entity.Manager != this)
-        {
-            Log.Warn($"Attempted to destroy entity with incorrect manager: &1{entity.Id}&r");
-            return false;       
-        }
-
-        Log.DebugIf($"Destroying entity &1{entity.Id}&r", DebugLogs);
-
-        entities.Remove(entity);
-        entity.destroyed = true;
-
-        try
-        {
-            entity.OnDestroyed();
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"Could not destroy entity &1{entity.Id}&r:\n{ex}");
-        }
-        
-        Log.DebugIf($"Entity &1{entity.Id}&r destroyed, sending message to client ..", DebugLogs);
-
-        Send(new EntityDestroyMessage(entity.Id));
-        return true;
+        return false;
     }
 
     /// <summary>
@@ -458,18 +379,20 @@ public class EntityManager : NetService
         if (!IsServer)
             throw new InvalidOperationException("Cannot spawn entity on client.");
 
-        if (!constructors.TryGetValue(type.FullName, out var constructor))
-            throw new InvalidOperationException($"Entity of type {type.FullName} is not registered.");
+        if (!registeredEntities.TryGetFirst(x => x.Type == type, out var info))
+            throw new InvalidOperationException($"Entity type {type} is not registered.");
         
-        var entity = constructor();
+        if (string.IsNullOrEmpty(info.RemoteType))
+            throw new InvalidOperationException($"Entity type {type} does not have a remote type registered.");
+
+        var entity = info.Constructor();
+        
+        if (entity == null)
+            throw new InvalidOperationException($"Could not construct entity type {type}");
         
         InitEntity(entity, idEnumerator++);
         
-        var msg = new EntitySpawnMessage(entity.Info.RemoteTypeName(IsServer), entity.Id);
-
-        WriteCmds(entity, ref msg);
-        
-        Send(msg);
+        Send(new EntitySpawnMessage(info.RemoteType!, entity.Id));
         
         entity.OnServerSpawned();
         return entity;
@@ -529,23 +452,25 @@ public class EntityManager : NetService
             return false;
         }
 
-        if (!constructors.TryGetValue(type.FullName, out var constructor))
+        if (!registeredEntities.TryGetFirst(x => x.Type == type, out var info))
         {
             Log.Warn($"Attempted to spawn entity of unknown type: &1{type.FullName}&r");
             return false;
         }
 
+        if (string.IsNullOrEmpty(info.RemoteType))
+        {
+            Log.Warn($"Attempted to spawn entity of type {type.FullName} without a remote type registered.");
+            return false;
+        }
+
         try
         {
-            entity = constructor();
+            entity = info.Constructor();
 
             InitEntity(entity, idEnumerator++);
             
-            var msg = new EntitySpawnMessage(entity.Info.RemoteTypeName(IsServer), entity.Id);
-
-            WriteCmds(entity, ref msg);
-        
-            Send(msg);
+            Send(new EntitySpawnMessage(info.RemoteType!, entity.Id));
 
             entity.OnServerSpawned();
         }
@@ -577,16 +502,12 @@ public class EntityManager : NetService
                 OnEntitySpawnMessage(spawnMsg);
                 return true;
             
-            case EntityInvokeMessage invokeMsg:
-                OnEntityInvokeMessage(invokeMsg);
-                return true;
-            
             case EntityDestroyMessage destroyMsg:
                 OnEntityDestroyMessage(destroyMsg);
                 return true;
             
-            case EntitySyncVarMessage syncVarMsg:
-                OnEntitySyncVarMessage(syncVarMsg);
+            case EntityWrappedMessage wrappedMsg:
+                OnEntityWrappedMessage(wrappedMsg);
                 return true;
             
             case ConfirmSpawnMessage confirmSpawnMsg:
@@ -597,43 +518,23 @@ public class EntityManager : NetService
         return base.Receive(serializableObject);
     }
 
-    private void OnEntitySyncVarMessage(EntitySyncVarMessage msg)
+    private void OnEntityWrappedMessage(EntityWrappedMessage msg)
     {
-        var entity = entities.Find(e => e.Id == msg.Entity);
+        var entity = entities.Find(e => e.Id == msg.Id);
         
         if (entity == null)
         {
-            Log.Warn($"Received entity sync var for an unknown entity: &1{msg.Entity}&r");
+            Log.Warn($"Received entity wrapped message for an unknown entity: &1{msg.Id}&r");
             return;
         }
-
-        try
-        {
-            entity.OnEntitySyncVarMessage(msg);
-        }   
-        catch (Exception ex)
-        {
-            Log.Error($"Failed to handle entity invoke:\n{ex}");
-        }
-    }
-
-    private void OnEntityInvokeMessage(EntityInvokeMessage msg)
-    {
-        var entity = entities.Find(e => e.Id == msg.Entity);
         
-        if (entity == null)
-        {
-            Log.Warn($"Received entity invoke for an unknown entity: &1{msg.Id}&r");
-            return;
-        }
-
         try
         {
-            entity.OnEntityInvokeMessage(msg);
-        }   
+            entity.OnEntityWrappedMessage(msg);
+        }
         catch (Exception ex)
         {
-            Log.Error($"Failed to handle entity invoke:\n{ex}");
+            Log.Error($"Failed to handle entity wrapped message:\n{ex}");
         }
     }
 
@@ -657,11 +558,13 @@ public class EntityManager : NetService
 
         try
         {
-            if (!entity.destroyed)
+            if (!entity.IsDestroyed)
             {
-                entity.destroyed = true;
+                entity.IsDestroyed = true;
                 entity.OnDestroyed();
             }
+            
+            entities.Remove(entity);
         }
         catch (Exception ex)
         {
@@ -685,7 +588,7 @@ public class EntityManager : NetService
             return;
         }
 
-        if (entity.confirmed)
+        if (entity.IsConfirmed)
         {
             Log.Warn($"Received duplicate spawn confirmation message for entity &1{entity.Id}&r");
             return;
@@ -693,10 +596,8 @@ public class EntityManager : NetService
 
         try
         {
-            entity.Info.ReadRpcs(entity, msg);
-            
             entity.OnClientConfirmed();
-            entity.confirmed = true;
+            entity.IsConfirmed = true;
         }
         catch (Exception ex)
         {
@@ -712,7 +613,7 @@ public class EntityManager : NetService
             return;
         }
         
-        if (!constructors.TryGetValue(msg.Type, out var constructor) || constructor == null)
+        if (!registeredEntities.TryGetFirst(x => string.Equals(x.LocalType, msg.Type), out var info))
         {
             Log.Warn($"Received entity spawn message for unknown type: &1{msg.Type}&r");
             return;
@@ -722,19 +623,14 @@ public class EntityManager : NetService
 
         try
         {
-            var entity = constructor();
+            var entity = info.Constructor();
             
             InitEntity(entity, msg.Id);
             
-            var confirmSpawnMessage = new ConfirmSpawnMessage(msg.Id);
+            Send(new ConfirmSpawnMessage(msg.Id));
             
-            WriteRpcs(entity, ref confirmSpawnMessage);
-            
-            Send(confirmSpawnMessage);
-            
-            entity.Info.ReadCmds(entity, msg);
             entity.OnClientSpawned();
-            entity.confirmed = true;
+            entity.IsConfirmed = true;
         }
         catch (Exception ex)
         {
@@ -742,37 +638,15 @@ public class EntityManager : NetService
         }
     }
 
-    private void WriteCmds(Entity entity, ref EntitySpawnMessage msg)
-    {
-        var type = entity.GetType();
-
-        if (!entitySent.AddUnique(type))
-            return;
-        
-        entity.Info.WriteCmds(entity, ref msg);
-    }
-
-    private void WriteRpcs(Entity entity, ref ConfirmSpawnMessage msg)
-    {
-        var type = entity.GetType();
-
-        if (!entitySent.AddUnique(type))
-            return;
-        
-        entity.Info.WriteRpcs(entity, ref msg);
-    }
-
     private void InitEntity(Entity entity, ushort id)
     {
         entity.Id = id;
         entity.Manager = this;
         
-        entity.Info = EntityInfo.GetInfo(entity.GetType());
-        
         entities.Add(entity);
     }
 
-    private void LocalDestroy(Entity entity)
+    private bool LocalDestroy(Entity entity)
     {
         if (entity == null)
             throw new ArgumentNullException(nameof(entity));
@@ -780,7 +654,8 @@ public class EntityManager : NetService
         Log.DebugIf($"Destroying entity &1{entity.Id}&r", DebugLogs);
 
         entities.Remove(entity);
-        entity.destroyed = true;
+        
+        entity.IsDestroyed = true;
 
         try
         {
@@ -792,5 +667,6 @@ public class EntityManager : NetService
         }
         
         Log.DebugIf($"Entity &1{entity.Id}&r destroyed", DebugLogs);
+        return true;
     }
 }

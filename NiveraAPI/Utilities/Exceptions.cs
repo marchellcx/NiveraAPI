@@ -6,6 +6,10 @@ using NiveraAPI.Console;
 
 namespace NiveraAPI.Utilities;
 
+/// <summary>
+/// A utility class for managing and logging exceptions. This class provides functionality to store, retrieve,
+/// log, and monitor exceptions, as well as access relevant stack trace and method information.
+/// </summary>
 public static class Exceptions
 {
 	private static List<Exception> _exceptionStore = new();
@@ -220,6 +224,34 @@ public static class Exceptions
 	/// This member does not include example usage.
 	/// </example>
 	public static event Action<Exception>? Unhandled;
+
+	/// <summary>
+	/// Throws an ArgumentException if the specified argument value is empty or contains only whitespace.
+	/// </summary>
+	/// <param name="argName">The name of the argument to validate.</param>
+	/// <param name="argValue">The value of the argument to check.</param>
+	/// <exception cref="ArgumentException">Thrown when the provided argument value is empty or whitespace.</exception>
+	public static void EmptyArgument(string argName, string argValue)
+	{
+		if (string.IsNullOrWhiteSpace(argValue))
+		{
+			throw new ArgumentException($"The argument '{argName}' cannot be empty or whitespace.", argName);
+		}
+	}
+
+	/// <summary>
+	/// Throws an ArgumentNullException if the specified argument value is null.
+	/// </summary>
+	/// <param name="argName">The name of the argument to check.</param>
+	/// <param name="argValue">The value of the argument to validate.</param>
+	/// <exception cref="ArgumentNullException">Thrown when the provided argument value is null.</exception>
+	public static void NullArgument(string argName, object argValue)
+	{
+		if (argValue == null)
+		{
+			throw new ArgumentNullException(argName);
+		}
+	}
 
 	/// <summary>
 	/// Determines whether any exceptions of the specified type exist in the exception store.

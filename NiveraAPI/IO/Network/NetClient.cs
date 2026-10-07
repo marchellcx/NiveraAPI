@@ -109,7 +109,7 @@ public class NetClient : ServiceCollection
     /// <summary>
     /// List of services that should be added to a newly created connection.
     /// </summary>
-    public volatile ConcurrentBag<Type> Services = new();
+    public volatile ConcurrentBag<Type> ProvidedServices = new();
 
     /// <summary>
     /// Establishes a connection to the specified endpoint using either TCP or UDP based on the provided parameter.
@@ -290,14 +290,9 @@ public class NetClient : ServiceCollection
         log.DebugIf("TcpSendPipe started", debugLogs);
 
         Connection = new(this, client, 0);
-
-        AddService(Connection);
+        Connection.Start();
         
         log.DebugIf("Connection started", debugLogs);
-        
-        Services.ForEach(t => Connection.AddService(t, []));
-
-        log.DebugIf("Services added", debugLogs);
         
         ThreadPool.QueueUserWorkItem(_ => ThreadUpdate());
         

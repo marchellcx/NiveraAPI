@@ -1,24 +1,33 @@
 using NiveraAPI.IO.Serialization.Interfaces;
-
 using NiveraAPI.Logs;
-using NiveraAPI.Services;
 
 namespace NiveraAPI.IO.Network;
 
 /// <summary>
 /// Represents a network service that provides functionality for managing network connections.
 /// </summary>
-public class NetService : Service
+public class NetService
 {
     /// <summary>
     /// The log associated with the service.
     /// </summary>
-    public LogSink Log { get; internal set; }
+    public LogSink Log
+    {
+        get
+        {
+            if (field == null)
+            {
+                field = LogManager.GetSource("Services", $"{GetType().Name}@{Connection?.EndPoint}");
+            }
+
+            return field;
+        }
+    }
     
     /// <summary>
     /// The connection associated with the service.
     /// </summary>
-    public NetConnection Connection { get; internal set; }
+    public NetConnection? Connection { get; internal set; }
     
     /// <summary>
     /// Whether the service is a server.
@@ -33,26 +42,27 @@ public class NetService : Service
     /// <summary>
     /// Whether the service is currently connected to a remote server.
     /// </summary>
-    public bool IsConnected => IsValid && IsRunning && Connection != null && Connection.IsValid && Connection.IsRunning;
+    public bool IsConnected => Connection != null && Connection.IsConnected;
 
-    /// <inheritdoc />
-    public override void Start()
+    /// <summary>
+    /// Initializes and starts the network service.
+    /// This method must be overridden in derived classes to provide additional functionalities specific to those implementations.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown if the <see cref="Connection"/> property is null, indicating that no network connection is available.
+    /// </exception>
+    public virtual void Start()
     {
-        base.Start();
-        
-        if (Connection == null)
-            throw new InvalidOperationException("Connection is null!");
 
-        Log = LogManager.GetSource("Services", $"{GetType().Name}@{Connection.EndPoint}");
-        Log.Info("Service started!");
     }
 
-    /// <inheritdoc />
-    public override void Stop()
+    /// <summary>
+    /// Stops the network service and releases associated resources.
+    /// This method should be overridden in derived classes to handle additional cleanup operations specific to their needs.
+    /// </summary>
+    public virtual void Stop()
     {
-        base.Stop();
         
-        Log.Info("Service stopped!");
     }
 
     /// <summary>

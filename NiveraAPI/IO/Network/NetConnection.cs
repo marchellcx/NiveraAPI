@@ -1,15 +1,16 @@
-﻿using System.Net;
+﻿using System.Collections.Concurrent;
+
+using System.Net;
 using System.Net.Sockets;
 
 using NiveraAPI.Logs;
+using NiveraAPI.Utilities;
 
 using NiveraAPI.IO.Network.API;
 using NiveraAPI.IO.Network.API.Internal.Tcp;
+
 using NiveraAPI.IO.Serialization;
 using NiveraAPI.IO.Serialization.Interfaces;
-
-using NiveraAPI.Services;
-using NiveraAPI.Services.Interfaces;
 
 namespace NiveraAPI.IO.Network;
 
@@ -17,7 +18,7 @@ namespace NiveraAPI.IO.Network;
 /// Represents a network connection that operates as either a client or server connection,
 /// enabling communication via sockets and providing utilities for sending and receiving data.
 /// </summary>
-public class NetConnection : ServiceCollection
+public class NetConnection
 {
     private volatile bool debugLogs;
     private volatile int id;
@@ -42,8 +43,8 @@ public class NetConnection : ServiceCollection
 
     private Queue<ISerializableObject> messages = new();
     private Queue<RetransmittedMessage> retransmissions = new();
-    
-    private List<NetService> netServices = new();
+
+    private Dictionary<Type, NetService> servicesByType = new();
     private Dictionary<Type, Action<ISerializableObject>> messageHandlers = new();
     
     /// <summary>
@@ -139,11 +140,39 @@ public class NetConnection : ServiceCollection
     }
 
     /// <summary>
+    /// Indicates whether the network connection is currently active and operational.
+    /// A connection is considered active if the underlying TCP client is connected
+    /// and the instance is associated with either a client or a server.
+    /// </summary>
+    public bool IsConnected => tcpClient != null && tcpClient.Connected && (client != null || server != null);
+
+    /// <summary>
     /// Whether the connection has any data to be sent.
     /// </summary>
     public bool HasData => msgWriter.Position > 0
                            || ping.ShouldWrite()
                            || time.ShouldWrite();
+
+    /// <summary>
+    /// A read-only dictionary that maps service types to their respective instances,
+    /// enabling management and access to network services associated with the current connection.
+    /// </summary>
+    public IReadOnlyDictionary<Type, NetService> Services => servicesByType;
+
+    /// <summary>
+    /// Creates a new <see cref="NetConnection"/> instance.
+    /// </summary>
+    public NetConnection(TcpClient client, int id)
+    {
+        this.id = id;
+        this.tcpClient = client ?? throw new ArgumentNullException(nameof(client));
+        
+        ping = new();
+        time = new(this);
+        
+        msgLock = new();
+        msgWriter = ByteWriter.Get();
+    }
 
     /// <summary>
     /// Creates a new <see cref="NetConnection"/> instance.
@@ -152,21 +181,13 @@ public class NetConnection : ServiceCollection
     /// <param name="client">The client instance associated with the connection.</param>
     /// <param name="id">The unique identifier for the connection.</param>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="server"/> is null.</exception>
-    public NetConnection(NetServer server, TcpClient client, int id)
+    public NetConnection(NetServer server, TcpClient client, int id) : this(client, id)
     {
-        this.id = id;
         this.server = server ?? throw new ArgumentNullException(nameof(server));
-        this.tcpClient = client ?? throw new ArgumentNullException(nameof(client));
 
         debugLogs = server.debugLogs;
         
         log = LogManager.GetSource("IO", $"NetConnectionServer@{EndPoint?.ToString() ?? "null"}[{id}]");
-        
-        ping = new();
-        time = new(this);
-        
-        msgLock = new();
-        msgWriter = ByteWriter.Get();
 
         sendPipe = new(client, this);
         sendPipe.Start();
@@ -182,49 +203,87 @@ public class NetConnection : ServiceCollection
     /// <param name="tcpClient">The socket used for communication.</param>
     /// <param name="id">The unique identifier for the connection.</param>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="client"/> or <paramref name="tcpClient"/> is null.</exception>
-    public NetConnection(NetClient client, TcpClient tcpClient, int id)
+    public NetConnection(NetClient client, TcpClient tcpClient, int id) : this(tcpClient, id)
     {
-        this.id = id;
         this.client = client ?? throw new ArgumentNullException(nameof(client));
-        this.tcpClient = tcpClient ?? throw new ArgumentNullException(nameof(tcpClient));
 
         debugLogs = client.debugLogs;
-        
-        ping = new();
-        time = new(this);
-
-        msgLock = new();
-        msgWriter = ByteWriter.Get();
         
         log = LogManager.GetSource("IO", $"NetConnectionClient@{EndPoint?.ToString() ?? "null"}");
     }
 
-    /// <inheritdoc />
-    public override void Start()
+    /// <summary>
+    /// Initializes and starts the connection by activating and registering services associated with the client or server.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown if neither a client nor a server is set for the connection before calling this method.
+    /// </exception>
+    public void Start()
     {
-        base.Start();
-        
+        var services = default(ConcurrentBag<Type>);
+
+        if (client != null)
+            services = client.ProvidedServices;
+        else if (server != null)
+            services = server.ProvidedServices;
+        else
+            throw new InvalidOperationException($"The connection MUST have a server or client set before being started!");
+
+        foreach (var serviceType in services)
+        {
+            if (serviceType.IsSubclassOf(typeof(NetService)))
+            {
+                Log.DebugIf($"Attempting to add service &3{serviceType}&r ..", debugLogs);
+                
+                if (Activator.CreateInstance(serviceType) is not NetService netService)
+                {
+                    Log.Error($"Failed to create service of type &3{serviceType}&r");
+                    continue;
+                }
+
+                servicesByType[serviceType] = netService;
+
+                netService.Connection = this;
+                netService.Start();
+                
+                Log.Info($"Added service &3{serviceType}&r!");
+            }
+            else
+            {
+                Log.Error($"Service type &3{serviceType}&r is not a subclass of &3NetService&r");
+            }
+        }
+
         ping.Start();
         time.Start();
         
         log.DebugIf("Started!", debugLogs);
     }
 
-    /// <inheritdoc />
-    public override void Stop()
+    /// <summary>
+    /// Stops the current <see cref="NetConnection"/> instance and cleans up resources.
+    /// </summary>
+    /// <remarks>
+    /// This method halts all associated services, clears internal collections,
+    /// and stops internal components such as <see cref="NetPing"/> and <see cref="NetTime"/>.
+    /// It also releases the <see cref="ByteWriter"/> back to the object pool.
+    /// </remarks>
+    public void Stop()
     {
-        base.Stop();
-
-        try
+        foreach (var kvp in servicesByType)
         {
-            StopAllServices(true);
-        }
-        catch (Exception ex)
-        {
-            log.Error($"Failed to stop services!\n{ex}");
+            try
+            {
+                kvp.Value.Stop();
+                kvp.Value.Connection = null;
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Failed to stop service &3{kvp.Key.Name}&r!\n{ex}");
+            }
         }
 
-        netServices.Clear();
+        servicesByType.Clear();
         messageHandlers.Clear();
         
         ping.Stop();
@@ -236,36 +295,52 @@ public class NetConnection : ServiceCollection
         log.DebugIf("Stopped!", debugLogs);
     }
 
-    /// <inheritdoc />
-    public override void OnServiceAdded(IService service)
+    /// <summary>
+    /// Adds a network service to the current <see cref="NetConnection"/> instance.
+    /// </summary>
+    /// <param name="service">The <see cref="NetService"/> to be added to the connection.</param>
+    /// <returns>
+    /// A boolean value indicating whether the service was successfully added.
+    /// Returns <c>true</c> if the service was added successfully; otherwise, <c>false</c>.
+    /// </returns>
+    public bool AddService(NetService service)
     {
-        base.OnServiceAdded(service);
+        Exceptions.NullArgument(nameof(service), service);
 
-        if (service is NetService netService)
-        {
-            netService.Connection = this;
-            
-            netServices.Add(netService);
-            
-            log.DebugIf($"Added network service &3{service.GetType().Name}&r", debugLogs);
-        }
-        else
-        {
-            log.DebugIf($"Added service &3{service.GetType().Name}&r", debugLogs);
-        }
+        var type = service.GetType();
+
+        if (servicesByType.ContainsKey(type))
+            return false;
+        
+        servicesByType[type] = service;
+        
+        service.Connection = this;
+        service.Start();
+        
+        return true;
     }
 
-    /// <inheritdoc />
-    public override void OnServiceRemoved(IService service)
+    /// <summary>
+    /// Removes the specified <see cref="NetService"/> from the connection.
+    /// </summary>
+    /// <param name="service">The <see cref="NetService"/> instance to remove.</param>
+    /// <returns>
+    /// <c>true</c> if the service was successfully removed; otherwise, <c>false</c>,
+    /// indicating that the service was not found in the collection.
+    /// </returns>
+    public bool RemoveService(NetService service)
     {
-        base.OnServiceRemoved(service);
+        Exceptions.NullArgument(nameof(service), service);
+        
+        var type = service.GetType();
 
-        if (service is NetService netService)
-        {
-            netService.Connection = null!;
-            
-            netServices.Remove(netService);
-        }
+        if (!servicesByType.Remove(type))
+            return false;
+        
+        service.Stop();
+        service.Connection = null;
+        
+        return true;
     }
 
     /// <summary>
@@ -276,9 +351,8 @@ public class NetConnection : ServiceCollection
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="handler"/> is null.</exception>
     public void RegisterHandler<T>(Action<T> handler) where T : ISerializableObject
     {
-        if (handler == null)
-            throw new ArgumentNullException(nameof(handler));
-        
+        Exceptions.NullArgument(nameof(handler), handler);
+
         messageHandlers[typeof(T)] = obj => handler((T)obj);
         
         log.DebugIf($"Registered handler for message &3{typeof(T).Name}&r", debugLogs);
@@ -364,18 +438,27 @@ public class NetConnection : ServiceCollection
                 {
                     position = msgWriter.Position;
                     
-                    var msg = messages.Dequeue();
+                    try
+                    {
+                        var msg = messages.Dequeue();
                     
-                    msgWriter.WriteUInt16(index);
+                        msgWriter.WriteUInt16(index);
 
-                    msg.Serializer.Serialize(obj, msgWriter);
+                        msg.Serializer.Serialize(msg, msgWriter);
 
-                    if (msgWriter.Position > ushort.MaxValue)
+                        if (msgWriter.Position > ushort.MaxValue)
+                        {
+                            msgWriter.Position = position;
+                        
+                            messages.Enqueue(msg);
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
                     {
                         msgWriter.Position = position;
-                        
-                        messages.Enqueue(msg);
-                        break;
+                    
+                        log.Error($"Failed to serialize queued message, rolling back!\n{ex}");
                     }
                 }
             }
@@ -426,20 +509,15 @@ public class NetConnection : ServiceCollection
             }
         }
             
-        for (var x = 0; x < netServices.Count; x++)
+        foreach (var kvp in servicesByType)
         {
-            var service = netServices[x];
-            
-            if (!service.IsValid || !service.IsRunning)
-                continue;
-
             try
             {
-                service.Update(netDelta, LibraryUpdate.DeltaTime);
+                kvp.Value.Update(netDelta, LibraryUpdate.DeltaTime);
             }
             catch (Exception ex)
             {
-                log.Error($"Failed to update service {service.GetType().Name}:\n{ex}");
+                log.Error($"Failed to update service &3{kvp.Key.Name}&r:\n{ex}");
             }
         }
     }
@@ -517,15 +595,12 @@ public class NetConnection : ServiceCollection
                 return true;
             }
 
-            for (var x = 0; x < netServices.Count; x++)
+            foreach (var kvp in servicesByType)
             {
-                var service = netServices[x];
-
-                if (!service.IsValid || !service.IsRunning)
-                    continue;
-
-                if (service.Receive(obj))
+                if (kvp.Value.Receive(obj))
+                {
                     return true;
+                }
             }
 
             log.Warn($"No handler for message of type &1{type.Name}&r");
@@ -540,8 +615,6 @@ public class NetConnection : ServiceCollection
 
     private bool TryReadPacket(ByteReader reader)
     {
-        ping.RestartWatch();
-        
         var headerByte = reader.ReadByte();
 
         if (!Enum.IsDefined(typeof(NetHeader), headerByte))
@@ -567,6 +640,8 @@ public class NetConnection : ServiceCollection
     private bool TryReadPing(ByteReader reader)
     {
         ping.Read(reader);
+        ping.RestartWatch();
+        
         return true;
     }
 

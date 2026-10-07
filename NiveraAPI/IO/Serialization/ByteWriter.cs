@@ -3,6 +3,7 @@ using System.Text;
 
 using NiveraAPI.Extensions;
 using NiveraAPI.Pooling;
+using NiveraAPI.Utilities;
 
 namespace NiveraAPI.IO.Serialization
 {
@@ -253,6 +254,23 @@ namespace NiveraAPI.IO.Serialization
         public void WriteTime(TimeSpan time)
         {
             WriteInt64(time.Ticks);
+        }
+
+        /// <summary>
+        /// Writes the content of a ByteWriter instance into the current writer's buffer.
+        /// </summary>
+        /// <param name="writer">The ByteWriter instance whose content will be written.</param>
+        public void WriteWriter(ByteWriter writer)
+        {
+            Exceptions.NullArgument(nameof(writer), writer);
+
+            if (writer.Position > 0)
+            {
+                for (var x = 0; x < writer.Position; x++)
+                    buffer[x + position] = writer.buffer[x];
+
+                Interlocked.Add(ref position, writer.position);
+            }
         }
 
         /// <summary>

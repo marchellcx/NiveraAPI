@@ -39,7 +39,7 @@ public static class ObjectSerializer
 
         index--;
         
-        if (index < 0 || index >= serializers.Length)
+        if (index >= serializers.Length)
             return null;
         
         return serializers[index];
@@ -101,7 +101,6 @@ public static class ObjectSerializer
         if (serializers == null)
         {
             serializers = new IObjectSerializer[1];
-            
             serializers[0] = objectSerializer;
             
             objectSerializer.UpdateIndex(1);

@@ -190,15 +190,12 @@ public class NetServer : ServiceCollection
         foreach (var kvp in conns)
         {
             log.DebugIf($"Removing connection {kvp.Key}", debugLogs);
-            
+
             try
             {
-                if (kvp.Value.IsRunning)
-                {
-                    kvp.Value.Stop();
+                kvp.Value.Stop();
 
-                    Disconnected?.Invoke(kvp.Value);
-                }
+                Disconnected?.Invoke(kvp.Value);
 
                 if (kvp.Value.TcpClient != null)
                 {
@@ -210,7 +207,7 @@ public class NetServer : ServiceCollection
                     {
                         // ignored
                     }
-                    
+
                     kvp.Value.ServerSendPipe?.Stop();
                     kvp.Value.ServerReceivePipe?.Stop();
                 }
@@ -283,16 +280,13 @@ public class NetServer : ServiceCollection
         queue.AddToQueue(() =>
         {
             log.DebugIf($"Removing connection {conn.Id}", debugLogs);
-            
+
             try
             {
-                if (conn.IsRunning)
-                {
-                    conn.Stop();
-                    
-                    Disconnected?.Invoke(conn);
-                }
-                
+                conn.Stop();
+
+                Disconnected?.Invoke(conn);
+
                 if (conn.TcpClient != null)
                 {
                     try
@@ -303,7 +297,7 @@ public class NetServer : ServiceCollection
                     {
                         // ignored
                     }
-                    
+
                     conn.ServerSendPipe?.Stop();
                     conn.ServerReceivePipe?.Stop();
                 }
@@ -327,9 +321,6 @@ public class NetServer : ServiceCollection
             {
                 foreach (var kvp in conns)
                 {
-                    if (!kvp.Value.IsValid || !kvp.Value.IsRunning)
-                        continue;
-
                     if (!kvp.Value.HasData)
                         continue;
                     
@@ -375,9 +366,7 @@ public class NetServer : ServiceCollection
         conn.Start();
         
         conns.TryAdd(conn.Id, conn);
-        
-        ProvidedServices.ForEach(t => conn.AddService(t, []));
-        
+
         Connected?.Invoke(conn);
     }
 
